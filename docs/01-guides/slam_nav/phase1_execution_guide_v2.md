@@ -58,7 +58,64 @@ connect_dog
 
 ---
 
-## 🚀 快速開始 - 4 Terminal 分工架構
+## ⚡ 快速模式：一鍵腳本（推薦新手）
+
+如果你覺得手動貼指令太麻煩，可以使用自動化腳本 `phase1_test.sh`：
+
+### **步驟 1：環境檢查（單一終端）**
+
+```bash
+cd /home/roy422/ros2_ws/src/elder_and_dog
+zsh phase1_test.sh env
+```
+
+這會自動：
+- 建立 `connect_dog` alias（如果還沒有）
+- 配置 Go2 網卡
+- 測試網路雙通（Google + Go2）
+
+### **步驟 2：開 4 個終端執行**
+
+**Terminal 1:**
+```bash
+zsh phase1_test.sh t1
+```
+
+**Terminal 2:**（等 T1 出現 "Video frame received"）
+```bash
+zsh phase1_test.sh t2
+```
+
+**Terminal 3:**
+```bash
+zsh phase1_test.sh t3
+```
+
+**Terminal 4:**（互動模式）
+```bash
+zsh phase1_test.sh t4
+```
+
+在 Terminal 4 輸入 `auto` 即可自動巡房建圖！
+
+### **步驟 3：儲存地圖和測試（任一終端）**
+
+```bash
+# 儲存地圖
+zsh phase1_test.sh save_map
+
+# 測試導航
+zsh phase1_test.sh nav_test
+
+# 檢查所有項目狀態
+zsh phase1_test.sh check
+```
+
+---
+
+## 🚀 標準模式：4 Terminal 分工架構
+
+如果你想了解每個步驟的細節，或需要客製化參數，請使用以下標準流程。
 
 你在 Mac VS Code SSH（無 GUI）操作，所有視覺改用 Foxglove，所有控制改用 CLI。
 請在 VS Code 開**4 個終端分頁**。

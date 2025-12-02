@@ -26,9 +26,19 @@ load_ros_env() {
     export CONN_TYPE=webrtc
     export ROBOT_IP="192.168.12.1"
     export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-    # 若外部已設定 CYCLONEDDS_URI 則沿用，否則預設用 local_only_v2.xml 方便雙網卡環境
-    export CYCLONEDDS_URI="${CYCLONEDDS_URI:-/home/roy422/local_only_v2.xml}"
-    echo -e "${GREEN}✅ 環境已載入 (CycloneDDS: $CYCLONEDDS_URI)${NC}"
+
+    # CycloneDDS 配置選擇（根據使用場景）
+    # - local_only_v2.xml：開發模式（VM 內部測試，解決雙網卡問題）
+    # - cyclonedds_dual.xml：整合模式（支援 Windows RViz2 零延遲控制）
+    if [[ -n "$USE_WINDOWS_RVIZ2" ]]; then
+        export CYCLONEDDS_URI="/home/roy422/cyclonedds_dual.xml"
+        echo -e "${GREEN}✅ 環境已載入 (整合模式: Windows RViz2 支援)${NC}"
+    else
+        export CYCLONEDDS_URI="/home/roy422/local_only_v2.xml"
+        echo -e "${GREEN}✅ 環境已載入 (開發模式: VM 內部測試)${NC}"
+    fi
+
+    echo -e "${BLUE}   CycloneDDS 配置: $CYCLONEDDS_URI${NC}"
 }
 
 # 步驟零：環境檢查

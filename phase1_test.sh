@@ -37,6 +37,16 @@ step_env() {
     echo -e "${BLUE}步驟零：環境就緒檢查${NC}"
     echo -e "${BLUE}========================================${NC}"
 
+    # 強力網路清洗，避免 DHCP/NetworkManager 重新塞入干擾 IP
+    echo -e "${BLUE}🧹 正在執行強力網路清洗...${NC}"
+    sudo systemctl stop NetworkManager 2>/dev/null || true
+    sudo killall dhclient 2>/dev/null || true
+    sudo ip addr flush dev "$CONNECT_IF"
+    sudo ip addr add 192.168.12.222/24 dev "$CONNECT_IF"
+    sudo ip link set "$CONNECT_IF" up
+    sudo ip route add 192.168.12.0/24 dev "$CONNECT_IF" 2>/dev/null || true
+    echo -e "${GREEN}✅ 網路清洗完成 (只保留 192.168.12.222 on $CONNECT_IF)${NC}"
+
     # 載入 zsh 設定
     echo -e "${YELLOW}1. 載入 Zsh 設定...${NC}"
     source ~/.zshrc

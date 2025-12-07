@@ -110,13 +110,14 @@ bt_navigator_navigate_to_pose_rclcpp_node:
 controller_server:
   ros__parameters:
     use_sim_time: False
-    controller_frequency: 3.0
+    controller_frequency: 10.0    # 修改：提高控制頻率
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugin: "progress_checker"
-    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    current_goal_checker: "general_goal_checker"  # 新增：消除警告
     controller_plugins: ["FollowPath"]
 
     # Progress checker parameters
@@ -139,13 +140,13 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      min_vel_x: 0.0
+      min_vel_x: 0.1          # 修改：Go2 需要最小速度才能起步
       min_vel_y: 0.0
-      max_vel_x: 3.0 #changed
+      max_vel_x: 0.5          # 修改：降低最大速度，更安全
       max_vel_y: 0.0
-      max_vel_theta: 3.0 #changed
-      min_speed_xy: 0.0
-      max_speed_xy: 3.0 #changed
+      max_vel_theta: 1.0      # 修改：降低角速度，避免瘋狂旋轉
+      min_speed_xy: 0.1       # 修改：確保有最小線速度
+      max_speed_xy: 0.5       # 修改：降低最大速度
       min_speed_theta: 0.0
       # Add high threshold velocity for turtlebot 3 issue.
       # https://github.com/ROBOTIS-GIT/turtlebot3_simulations/issues/75
@@ -156,7 +157,7 @@ controller_server:
       decel_lim_y: -2.5
       decel_lim_theta: -3.2
       vx_samples: 20
-      vy_samples: 20
+      vy_samples: 5         # 修改：降低取樣負荷
       vtheta_samples: 20
       sim_time: 1.2 #changed
       linear_granularity: 0.05
@@ -174,7 +175,7 @@ controller_server:
       GoalAlign.forward_point_distance: 0.1
       PathDist.scale: 32.0
       GoalDist.scale: 24.0
-      RotateToGoal.scale: 32.0
+      RotateToGoal.scale: 10.0     # 修改：降低以避免強迫原地對準
       RotateToGoal.slowing_factor: 5.0
       RotateToGoal.lookahead_time: -1.0
 
@@ -190,7 +191,7 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      footprint: "[ [0.360, 0.200], [0.360, -0.200], [-0.450, -0.200], [-0.450, 0.200] ]"
+      footprint: "[ [0.3, 0.15], [0.3, -0.15], [-0.3, -0.15], [-0.3, 0.15] ]"  # 修改：縮小 footprint
       plugins: ["static_layer", "voxel_layer", "inflation_layer"]
 
       static_layer:
@@ -204,6 +205,7 @@ local_costmap:
         observation_sources: scan
         scan:
           topic: /scan
+          min_obstacle_height: 0.1  # 新增：避免掃到地板
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -215,15 +217,15 @@ local_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 1.0
-        inflation_radius: 0.25
+        cost_scaling_factor: 3.0    # 修改：提高 cost scaling
+        inflation_radius: 0.15      # 修改：縮小膨脹半徑
 
 global_costmap:
   global_costmap:
     ros__parameters:
       update_frequency: 1.0
       publish_frequency: 1.0
-      global_frame: odom
+      global_frame: map  # 修正：SLAM 與 Nav2 Goal 都使用 map 座標系
       robot_base_frame: base_link
       use_sim_time: False
       resolution: 0.05
@@ -233,7 +235,7 @@ global_costmap:
       height: 500
       origin_x: -250.0 
       origin_y: -250.0
-      footprint: "[ [0.360, 0.200], [0.360, -0.200], [-0.450, -0.200], [-0.450, 0.200] ]"
+      footprint: "[ [0.3, 0.15], [0.3, -0.15], [-0.3, -0.15], [-0.3, 0.15] ]"  # 修改：縮小 footprint
       plugins: ["static_layer", "voxel_layer", "inflation_layer"]
 
       static_layer:
@@ -247,6 +249,7 @@ global_costmap:
         observation_sources: scan
         scan:
           topic: scan
+          min_obstacle_height: 0.1  # 新增：避免掃到地板
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -258,8 +261,8 @@ global_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 1.0
-        inflation_radius: 0.25
+        cost_scaling_factor: 3.0    # 修改：提高 cost scaling
+        inflation_radius: 0.15      # 修改：縮小膨脹半徑
 
 map_server:
   ros__parameters:
@@ -279,7 +282,7 @@ map_saver:
 planner_server:
   ros__parameters:
     planner_plugins: ["GridBased"]
-    use_sim_time: True
+    use_sim_time: False   # 修改：實機環境使用 False
 
     GridBased:
       plugin: "nav2_smac_planner/SmacPlannerHybrid"
@@ -332,7 +335,7 @@ behavior_server:
     global_frame: odom
     robot_base_frame: base_link
     transform_tolerance: 0.1
-    use_sim_time: true
+    use_sim_time: False   # 修改：實機環境使用 False
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4

@@ -86,41 +86,43 @@ class Go2Connection:
     
     def on_connection_state_change(self) -> None:
         """Handle peer connection state changes"""
-        logger.info(f"[診斷] Connection state: {self.pc.connectionState}")
-
-        # Note: Validation is handled after successful WebRTC connection
-        # in the original implementation, not here
+        state = self.pc.connectionState
+        # 只在關鍵狀態變化時用 INFO
+        if state in ("connected", "failed", "closed"):
+            logger.info(f"Connection state: {state}")
+        else:
+            logger.debug(f"[診斷] Connection state: {state}")
 
     def on_ice_connection_state_change(self) -> None:
         """Handle ICE connection state changes"""
-        logger.info(f"[診斷] ICE connection state: {self.pc.iceConnectionState}")
+        logger.debug(f"[診斷] ICE connection state: {self.pc.iceConnectionState}")
 
     def on_signaling_state_change(self) -> None:
         """Handle signaling state changes"""
-        logger.info(f"[診斷] Signaling state: {self.pc.signalingState}")
+        logger.debug(f"[診斷] Signaling state: {self.pc.signalingState}")
 
     def on_ice_gathering_state_change(self) -> None:
         """Handle ICE gathering state changes"""
-        logger.info(f"[診斷] ICE gathering state: {self.pc.iceGatheringState}")
+        logger.debug(f"[診斷] ICE gathering state: {self.pc.iceGatheringState}")
 
     def on_data_channel_created(self, channel) -> None:
         """Handle data channel created by remote peer"""
-        logger.info(f"[診斷] Remote data channel created: {channel.label} (id={channel.id})")
+        logger.debug(f"[診斷] Remote data channel created: {channel.label} (id={channel.id})")
 
     def on_data_channel_close(self) -> None:
         """Handle data channel close event"""
-        logger.warning(f"[診斷] Data channel closed. State: {self.data_channel.readyState}")
+        logger.warning(f"Data channel closed. State: {self.data_channel.readyState}")
 
     def on_data_channel_error(self, error: Exception) -> None:
         """Handle data channel error event"""
-        logger.error(f"[診斷] Data channel error: {error}")
+        logger.error(f"Data channel error: {error}")
 
     def on_data_channel_open(self) -> None:
         """Handle data channel open event"""
-        logger.info("[診斷] ✅ Data channel is open (aiortc event triggered)")
-        logger.info(f"[診斷] Data channel readyState: {self.data_channel.readyState}")
-        logger.info(f"[診斷] Connection state: {self.pc.connectionState}")
-        logger.info(f"[診斷] ICE connection state: {self.pc.iceConnectionState}")
+        # 關鍵成功訊息保持 INFO
+        logger.info("✅ Data channel opened - WebRTC 連線成功")
+        logger.debug(f"[診斷] readyState: {self.data_channel.readyState}")
+        logger.debug(f"[診斷] Connection: {self.pc.connectionState}, ICE: {self.pc.iceConnectionState}")
 
         # Force data channel to open state if needed (workaround)
         if self.data_channel.readyState != "open":
@@ -219,7 +221,7 @@ class Go2Connection:
             }
             
             payload_str = json.dumps(payload)
-            logger.info(f"-> Sending message {payload_str}")
+            logger.debug(f"-> Sending message {payload_str}")
             self.data_channel.send(payload_str)
             
         except Exception as e:
@@ -268,17 +270,14 @@ class Go2Connection:
     async def connect(self) -> None:
         """Establish WebRTC connection to robot with full encryption"""
         try:
-            logger.info("[診斷] 開始 WebRTC 握手...")
-            logger.info(f"[診斷] Connection state: {self.pc.connectionState}")
-            logger.info(f"[診斷] ICE connection state: {self.pc.iceConnectionState}")
-            logger.info(f"[診斷] Signaling state: {self.pc.signalingState}")
+            logger.info("開始 WebRTC 連線...")
+            logger.debug(f"[診斷] Connection: {self.pc.connectionState}, ICE: {self.pc.iceConnectionState}, Signaling: {self.pc.signalingState}")
 
             # Step 1: Create WebRTC offer
-            logger.info("[診斷] 步驟 1: 建立 WebRTC Offer...")
+            logger.debug("[診斷] 步驟 1: 建立 WebRTC Offer...")
             offer = await self.pc.createOffer()
             await self.pc.setLocalDescription(offer)
-            logger.info(f"[診斷] ✅ Local description set")
-            logger.info(f"[診斷] Signaling state after setLocalDescription: {self.pc.signalingState}")
+            logger.debug(f"[診斷] Local description set, Signaling: {self.pc.signalingState}")
             
             sdp_offer = self.pc.localDescription
             sdp_offer_json = {
@@ -291,12 +290,12 @@ class Go2Connection:
             new_sdp = json.dumps(sdp_offer_json)
 
             # Step 2: Get robot's public key
-            logger.info("[診斷] 步驟 2: 取得機器人公鑰...")
+            logger.debug("[診斷] 步驟 2: 取得機器人公鑰...")
             try:
                 response = self.http_client.get_robot_public_key(self.robot_ip)
                 if not response:
                     raise Go2ConnectionError("Failed to get public key response")
-                logger.info(f"[診斷] ✅ 取得公鑰成功")
+                logger.debug(f"[診斷] 取得公鑰成功")
                 
                 # Decode the response text from base64
                 decoded_response = base64.b64decode(response.text).decode('utf-8')
@@ -320,53 +319,47 @@ class Go2Connection:
                 raise Go2ConnectionError(f"Failed to get robot public key: {e}")
             
             # Step 3: Encrypt and send SDP
-            logger.info("[診斷] 步驟 3: 加密並發送 SDP...")
+            logger.debug("[診斷] 步驟 3: 加密並發送 SDP...")
             try:
                 # Generate AES key
                 aes_key = CryptoUtils.generate_aes_key()
-                logger.info(f"[診斷] ✅ AES 金鑰已生成")
+                logger.debug(f"[診斷] AES 金鑰已生成")
 
                 # Load Public Key
                 public_key = CryptoUtils.rsa_load_public_key(public_key_pem)
-                logger.info(f"[診斷] ✅ RSA 公鑰已載入")
+                logger.debug(f"[診斷] RSA 公鑰已載入")
 
                 # Encrypt the SDP and AES key
                 encrypted_body = {
                     "data1": CryptoUtils.aes_encrypt(new_sdp, aes_key),
                     "data2": CryptoUtils.rsa_encrypt(aes_key, public_key),
                 }
-                logger.info(f"[診斷] ✅ SDP 已加密")
+                logger.debug(f"[診斷] SDP 已加密")
 
                 # Send the encrypted data
-                logger.info(f"[診斷] 發送加密 SDP 到機器人...")
+                logger.debug(f"[診斷] 發送加密 SDP 到機器人...")
                 response = self.http_client.send_encrypted_sdp(
                     self.robot_ip, path_ending, encrypted_body
                 )
 
                 if not response:
                     raise Go2ConnectionError("Failed to send encrypted SDP")
-                logger.info(f"[診斷] ✅ 取得機器人 Answer")
+                logger.debug(f"[診斷] 取得機器人 Answer")
 
                 # Decrypt the response
                 decrypted_response = CryptoUtils.aes_decrypt(response.text, aes_key)
                 peer_answer = json.loads(decrypted_response)
 
                 # Set remote description
-                logger.info(f"[診斷] 設定遠端描述...")
-                logger.info(f"[診斷] Signaling state before setRemoteDescription: {self.pc.signalingState}")
+                logger.debug(f"[診斷] 設定遠端描述...")
                 answer = RTCSessionDescription(
                     sdp=peer_answer['sdp'],
                     type=peer_answer['type']
                 )
                 await self.pc.setRemoteDescription(answer)
-                logger.info(f"[診斷] ✅ Remote description set")
-                logger.info(f"[診斷] Signaling state after setRemoteDescription: {self.pc.signalingState}")
-                logger.info(f"[診斷] ICE connection state after remote desc: {self.pc.iceConnectionState}")
+                logger.debug(f"[診斷] Remote description set, Signaling: {self.pc.signalingState}")
 
-                logger.info(f"[診斷] ✅ WebRTC 握手完成（SDP 交換成功）")
-                logger.info(f"[診斷] ⏳ 等待 data channel 開啟... 這需要 ICE 候選項交換和 DTLS 握手完成")
-                logger.info(f"[診斷] 注意：如果在此步驟卡住超過 30 秒，可能是 SCTP 握手失敗")
-                logger.info(f"Successfully established WebRTC connection to robot {self.robot_num}")
+                logger.info(f"WebRTC SDP 交換完成，等待 Data Channel 開啟...")
 
                 # Monitor SCTP handshake with timeout
                 await self._monitor_sctp_handshake()
@@ -398,29 +391,23 @@ class Go2Connection:
             # Check if data channel opened
             if self.data_channel.readyState == "open":
                 elapsed = time.time() - start_time
-                logger.info(f"[診斷] ✅ SCTP 握手成功！Data channel 在 {elapsed:.1f} 秒後開啟")
+                logger.info(f"✅ SCTP 握手成功 ({elapsed:.1f}s)")
                 return
 
             await asyncio.sleep(check_interval)
 
         # Timeout - SCTP handshake failed
         elapsed = time.time() - start_time
-        logger.error(f"[診斷] ❌ SCTP 握手超時（>{timeout}秒）")
-        logger.error(f"[診斷] 可能原因：")
-        logger.error(f"  1. Go2 固件不支援 WebRTC SCTP 協議")
-        logger.error(f"  2. Go2 固件版本與此客戶端不相容")
-        logger.error(f"  3. WSL2 環境中 SCTP 核心支援有限")
-        logger.error(f"[診斷] Data channel 狀態: {self.data_channel.readyState}")
-        logger.error(f"[診斷] 連接狀態: {self.pc.connectionState}")
-        logger.error(f"[診斷] ICE 連接狀態: {self.pc.iceConnectionState}")
+        logger.error(f"❌ SCTP 握手超時 (>{timeout}s) - Data channel: {self.data_channel.readyState}")
+        logger.error(f"可能原因: Go2 固件不相容 / DTLS 失敗 / 網路問題")
+        logger.debug(f"[診斷] Connection: {self.pc.connectionState}, ICE: {self.pc.iceConnectionState}")
 
         # Attempt diagnostic: Check if we can still send heartbeat
         try:
-            logger.info("[診斷] 嘗試強制 data channel 狀態為 open（SCTP 失敗的臨時迴避方案）...")
+            logger.warning("嘗試強制開啟 data channel（迴避方案）...")
             if self.data_channel.readyState != "open":
                 self.data_channel._setReadyState("open")
-                logger.warning("[診斷] ⚠️  已強制設定 data channel 為 open，但 SCTP 握手仍未完成")
-                logger.warning("[診斷] 實際通訊可能失敗 - 建議確認 Go2 固件版本")
+                logger.warning("⚠️ 已強制開啟 data channel，但 SCTP 未完成 - 通訊可能失敗")
         except Exception as e:
             logger.error(f"[診斷] 強制設定失敗: {e}")
 

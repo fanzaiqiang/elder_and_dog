@@ -25,20 +25,13 @@ load_ros_env() {
     source install/setup.zsh
     export CONN_TYPE=webrtc
     export ROBOT_IP="192.168.12.1"
-    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    
+    # ⚠️ 重要：移除 CycloneDDS 設定，使用 ROS2 預設 FastDDS
+    # CycloneDDS 在 VM 雙網卡環境下會導致 DDS discovery 問題
+    unset RMW_IMPLEMENTATION
+    unset CYCLONEDDS_URI
 
-    # CycloneDDS 配置選擇（根據使用場景）
-    # - local_only_v2.xml：開發模式（VM 內部測試，解決雙網卡問題）
-    # - cyclonedds_dual.xml：整合模式（支援 Windows RViz2 零延遲控制）
-    if [[ -n "$USE_WINDOWS_RVIZ2" ]]; then
-        export CYCLONEDDS_URI="/home/roy422/cyclonedds_dual.xml"
-        echo -e "${GREEN}✅ 環境已載入 (整合模式: Windows RViz2 支援)${NC}"
-    else
-        export CYCLONEDDS_URI="/home/roy422/local_only_v2.xml"
-        echo -e "${GREEN}✅ 環境已載入 (開發模式: VM 內部測試)${NC}"
-    fi
-
-    echo -e "${BLUE}   CycloneDDS 配置: $CYCLONEDDS_URI${NC}"
+    echo -e "${GREEN}✅ 環境已載入 (使用 ROS2 預設 DDS)${NC}"
 }
 
 # 步驟零：環境檢查
@@ -369,10 +362,11 @@ step_bridge() {
 
     echo -e "${YELLOW}載入 ROS2 環境...${NC}"
     source /opt/ros/humble/setup.zsh
-    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-    export CYCLONEDDS_URI=/home/roy422/local_only_v2.xml
+    # 使用 ROS2 預設 DDS (FastDDS) - CycloneDDS 導致 discovery 問題
+    # export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    # export CYCLONEDDS_URI=/home/roy422/local_only_v2.xml
 
-    echo -e "${GREEN}✅ 環境已載入${NC}"
+    echo -e "${GREEN}✅ 環境已載入 (使用 ROS2 預設 DDS)${NC}"
     echo -e "${YELLOW}啟動 rosbridge WebSocket server...${NC}"
     echo -e "${YELLOW}Port: 9090${NC}\n"
 

@@ -249,9 +249,9 @@ ros2 node list | grep go2_driver
 # 1. 確認 rosbridge 運行
 ros2 node list | grep rosbridge
 
-# 2. 確認 ROS2 環境變數
+# 2. 確認 ROS2 環境變數（應為空，使用預設 FastDDS）
 echo $RMW_IMPLEMENTATION
-# 應該顯示 rmw_cyclonedds_cpp
+# 應該為空（若顯示 rmw_cyclonedds_cpp 請執行 unset RMW_IMPLEMENTATION）
 
 # 3. 重新啟動系統
 tmux kill-session -t go2_mcp

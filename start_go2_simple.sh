@@ -53,11 +53,12 @@ source "$WORKSPACE_ROOT/install/setup.zsh"
 export ROBOT_IP="$ROBOT_IP"
 export CONN_TYPE="$CONN_TYPE"
 
-# ⚠️ 關鍵修正：設定 CycloneDDS 環境變數（與 phase1_test.sh 保持一致，若外部已設定則不覆蓋）
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export CYCLONEDDS_URI="${CYCLONEDDS_URI:-/home/roy422/local_only_v2.xml}"
+# ⚠️ 使用 ROS2 預設 DDS (FastDDS) - CycloneDDS 導致 discovery 問題
+# 明確清除可能從 ~/.zshrc 繼承的 CycloneDDS 設定
+unset RMW_IMPLEMENTATION
+unset CYCLONEDDS_URI
 
-echo -e "${GREEN}✓ 環境已準備 (CycloneDDS: $CYCLONEDDS_URI)${NC}"
+echo -e "${GREEN}✓ 環境已準備 (使用 ROS2 預設 DDS)${NC}"
 echo ""
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  啟動中... (按 Ctrl+C 停止)${NC}"

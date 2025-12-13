@@ -82,6 +82,38 @@
 
 ---
 
+## 定時移動指令（推薦使用！）
+
+> 💡 使用 `/move_for_duration` 服務可以讓機器狗**平滑移動指定時間**，比 `publish_once` 更精確。
+
+### 使用方式
+
+```python
+call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', 
+             {"linear_x": 0.2, "angular_z": 0.0, "duration": 2.0})
+```
+
+### 參數說明
+
+| 參數 | 範圍 | 說明 |
+|------|------|------|
+| `linear_x` | -0.3 ~ 0.3 m/s | 前進（正）/ 後退（負）速度 |
+| `angular_z` | -0.5 ~ 0.5 rad/s | 左轉（正）/ 右轉（負）速度 |
+| `duration` | 0 ~ 10 秒 | 持續移動時間 |
+
+### 常用指令
+
+| 動作 | 指令 |
+|------|------|
+| **前進 2 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"linear_x": 0.2, "duration": 2.0})` |
+| **後退 1 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"linear_x": -0.2, "duration": 1.0})` |
+| **左轉 1 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"angular_z": 0.3, "duration": 1.0})` |
+| **右轉 1 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"angular_z": -0.3, "duration": 1.0})` |
+
+> ⚠️ **預設使用此服務**：當使用者說「往前走 X 秒」時，優先使用 `/move_for_duration`，而非 `publish_once`。
+
+---
+
 ## 安全限制（嚴格遵守！）
 
 | 參數 | 限制值 | 說明 |

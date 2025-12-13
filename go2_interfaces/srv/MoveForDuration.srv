@@ -1,0 +1,9 @@
+# Request
+float64 linear_x    # 前進/後退速度 (m/s)，-0.3 ~ 0.3
+float64 angular_z   # 旋轉速度 (rad/s)，-0.5 ~ 0.5
+float64 duration    # 持續時間 (秒)
+---
+# Response
+bool success
+string message
+float64 actual_duration  # 實際執行時間

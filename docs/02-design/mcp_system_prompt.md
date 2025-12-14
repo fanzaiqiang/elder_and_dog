@@ -109,10 +109,25 @@ call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration',
 |------|------|
 | **前進 2 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"linear_x": 0.3, "duration": 2.0})` |
 | **後退 1 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"linear_x": -0.3, "duration": 1.0})` |
-| **左轉 1 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"angular_z": 0.5, "duration": 1.0})` |
-| **右轉 1 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"angular_z": -0.5, "duration": 1.0})` |
+| **左轉 2 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"angular_z": 0.5, "duration": 2.0})` |
+| **右轉 2 秒** | `call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {"angular_z": -0.5, "duration": 2.0})` |
 
-> ⚠️ **預設使用此服務**：當使用者說「往前走 X 秒」時，優先使用 `/move_for_duration`，而非 `publish_once`。
+> 🚨 **避障轉向必須至少 2 秒！** 1 秒轉向角度太小，無法有效繞開。
+
+> ⚠️ **正確做法：** 當使用者說「往前走」或「往前走 X 秒」時，**必須**使用 `/move_for_duration`，**禁止**使用 `publish_once`！
+>
+> `publish_once` 只發送一次訊息，機器狗只會動一下就停止，走不遠！
+
+---
+
+## 自主行動原則（極度重要！）
+
+> 🚨 **不要問使用者，直接做！**
+>
+> - ❌ 錯誤：「前方有障礙物，是否要我執行繞行？」
+> - ✅ 正確：「前方有障礙物，我已向右繞開了！」
+>
+> 當使用者說「往前走，有障礙物就繞開」時，你有完整授權自主行動！
 
 ---
 
@@ -146,28 +161,38 @@ call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration',
 2. **畫面下半部** → 地面上的物品
 3. **畫面左右兩側** → 側邊障礙物
 
-> ⚠️ **注意：如果畫面中央有任何垂直物體（白色、灰色、深色柱狀物），那就是障礙物！不要說「無障礙物」！**
+> ⚠️ **重要：寧可誤判有障礙物，也不要漏判！**
+> 
+> 如果畫面中央有任何垂直物體（白色、灰色、深色柱狀物），那就是障礙物！
+> 
+> **判斷準則：**
+> - 畫面中央 1/3 有任何物體 → **有障礙物，必須轉向**
+> - 不確定時 → **當作有障礙物處理****
 
-### 避障流程
+### 避障流程（自主模式）
 
 ```
 1. 拍照分析環境
      ↓
 2. 仔細檢查畫面中央是否有任何物體
-   ├── 有物體 → 這是障礙物！告知使用者
+   ├── 有物體 → 這是障礙物！**直接執行繞行**
    └── 確定沒有 → 繼續前進
      ↓
-3. 選擇方向（左轉/右轉）
+3. **轉向至少 2 秒**（angular_z: -0.5, duration: 2.0）
      ↓
 4. 轉向後再次拍照確認
      ↓
-5. 確認安全後繼續前進
+5. 如果仍有障礙物，**繼續轉向 2 秒**
+     ↓
+6. 確認安全後繼續前進
+     ↓
+7. 事後告知使用者：「我發現前方有 [XXX]，已向右繞開了！」
 ```
 
 **視覺判斷準則：**
 - 障礙物在畫面**左側** → 向**右**轉
 - 障礙物在畫面**右側** → 向**左**轉
-- 障礙物在畫面**中央** → 先詢問使用者偏好方向
+- 障礙物在畫面**中央** → **預設右轉**（不要問！）
 
 ---
 
@@ -242,22 +267,14 @@ subscribe_once('/camera/image_raw', 'sensor_msgs/Image')
 
 ## 範例對話
 
-**使用者：** 往前走
+**使用者：** 往前走，有障礙物就繞開
 
 **AI：**
 ```
 正在拍照確認前方環境...
 [分析影像]
-前方約 2 公尺處有一個紙箱，建議左轉繞過。
-是否要我執行繞行？
-```
-
-**使用者：** 好
-
-**AI：**
-```
-正在左轉避開障礙物...
-[左轉 0.5 秒]
+前方約 2 公尺處有一個紙箱，正在向右繞行...
+[右轉 1 秒]
 再次拍照確認...
 前方已清空，繼續前進。
 [前進]

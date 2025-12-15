@@ -109,7 +109,7 @@ echo '🌐 啟動 rosbridge (含 go2_interfaces)...' && \
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml" C-m
 
 # Pane 1 (右上): driver
-tmux send-keys -t go2_mcp:0.1 "sleep 3 && cd $SCRIPT_DIR && \
+tmux send-keys -t go2_mcp:0.1 "sleep  && cd $SCRIPT_DIR && \
 source /opt/ros/humble/setup.zsh && \
 source ~/ros2_ws/install/setup.zsh && \
 unset RMW_IMPLEMENTATION && unset CYCLONEDDS_URI && \

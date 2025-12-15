@@ -28,8 +28,8 @@
 ```
 「系統已就緒，機器狗已連線。正在拍照確認環境...」
 → 呼叫 call_service('/capture_snapshot', 'std_srvs/Trigger')
-→ 讀取 /tmp/snapshot_latest.jpg
-→ 分析並描述影像內容
+→ 呼叫 Perception API 取得深度資訊
+→ 分析並描述環境狀態
 ```
 
 **❌ 連線失敗：**
@@ -48,6 +48,109 @@
 | `subscribe_once(topic, type)` | 讀取單次訊息 | 取得 odometry 位置 |
 | `publish_once(topic, type, data)` | 發布單次訊息 | 控制移動 |
 | `call_service(service, type, request)` | 呼叫 ROS2 服務 | 拍照服務 |
+| `run_command(cmd)` | 執行 shell 指令 | 呼叫 Perception API |
+
+---
+
+## 🆕 Perception API（深度估計 + 避障建議）
+
+> 🎯 **這是 W8 新增的核心功能！** 使用 DA3 深度估計，取得真實距離與避障建議。
+
+### API 端點
+
+| 環境 | API URL | 說明 |
+|------|---------|------|
+| **開發環境** | `http://192.168.1.146:8051/perceive` | 透過 Windows SSH Tunnel |
+| **Demo 現場** | `http://140.136.155.5:8050/perceive` | 直連 GPU Server |
+
+> ⚠️ **開發時使用 8051 端口，Demo 現場使用 8050 端口！**
+
+### 呼叫方式
+
+```bash
+# Step 1: 先拍照
+call_service('/capture_snapshot', 'std_srvs/Trigger')
+
+# Step 2: 呼叫 Perception API
+run_command('curl -s -X POST http://192.168.1.146:8051/perceive -F "image=@/tmp/snapshot_latest.jpg"')
+```
+
+### API 回傳格式
+
+```json
+{
+    "left_m": 2.33,           // 左側距離（公尺）
+    "center_m": 1.31,         // 中央距離（公尺）
+    "right_m": 0.92,          // 右側距離（公尺）
+    "front_obstacle_m": 0.95, // 前方最近障礙物距離
+    "min_m": 0.72,            // 最小距離
+    "max_m": 4.13,            // 最大距離
+    "suggestion": "⚠️ 正前方 0.9m 有障礙，建議向左繞行（左側 2.3m 較空曠）",
+    "inference_ms": 337.7,    // 推論時間
+    "image_size": "640x480"
+}
+```
+
+### Suggestion 類型
+
+| Suggestion | 說明 | 執行動作 |
+|------------|------|---------|
+| `✅ 前方暢通` | `front_obstacle_m > 1.0m` | 可安全前進 |
+| `⚠️ 建議向左繞行` | 左側較空曠 | `angular_z: 0.5` (左轉) |
+| `⚠️ 建議向右繞行` | 右側較空曠 | `angular_z: -0.5` (右轉) |
+| `🛑 三面受阻` | 全部 < 0.5m | 停止或後退 |
+
+---
+
+## 避障策略（🔥 更新版 - 使用 Perception API）
+
+### 新版避障流程（推薦！）
+
+```
+1. 拍照
+   call_service('/capture_snapshot', 'std_srvs/Trigger')
+     ↓
+2. 呼叫 Perception API
+   run_command('curl -s -X POST http://192.168.1.146:8051/perceive -F "image=@/tmp/snapshot_latest.jpg"')
+     ↓
+3. 解析 JSON 結果
+   ├── front_obstacle_m > 1.0m → ✅ 繼續前進
+   ├── suggestion 包含「向左」 → 左轉 2 秒
+   ├── suggestion 包含「向右」 → 右轉 2 秒
+   └── suggestion 包含「三面受阻」 → 停止或後退
+     ↓
+4. 執行移動指令
+   call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration', {...})
+     ↓
+5. 移動後再次拍照確認
+     ↓
+6. 重複步驟 2-5 直到任務完成
+```
+
+### 避障決策邏輯
+
+```python
+# 解析 Perception API 回傳的 JSON
+result = json.loads(response)
+
+if result['front_obstacle_m'] > 1.0:
+    # 前方暢通，繼續前進
+    call_service('/move_for_duration', {..., "linear_x": 0.3, "duration": 2.0})
+    
+elif '向左' in result['suggestion']:
+    # 左側空曠，左轉繞行
+    call_service('/move_for_duration', {..., "angular_z": 0.5, "duration": 2.0})
+    
+elif '向右' in result['suggestion']:
+    # 右側空曠，右轉繞行
+    call_service('/move_for_duration', {..., "angular_z": -0.5, "duration": 2.0})
+    
+elif '三面受阻' in result['suggestion']:
+    # 三面受阻，後退
+    call_service('/move_for_duration', {..., "linear_x": -0.3, "duration": 1.0})
+```
+
+> 🚨 **重要：直接根據 `suggestion` 執行動作，不要再詢問使用者！**
 
 ---
 
@@ -66,7 +169,7 @@
 **視覺與移動方向對應：**
 - 障礙物在畫面**左側** = 物體在機器狗**左邊** → 需要**右轉**
 - 障礙物在畫面**右側** = 物體在機器狗**右邊** → 需要**左轉**
-- 障礙物在畫面**中央** = 物體在正前方 → 詢問使用者偏好方向
+- 障礙物在畫面**中央** = 物體在正前方 → 根據 Perception API 建議
 
 ---
 
@@ -125,7 +228,7 @@ call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration',
 > 🚨 **不要問使用者，直接做！**
 >
 > - ❌ 錯誤：「前方有障礙物，是否要我執行繞行？」
-> - ✅ 正確：「前方有障礙物，我已向右繞開了！」
+> - ✅ 正確：「前方 0.9m 有障礙物，我已向左繞開了！」
 >
 > 當使用者說「往前走，有障礙物就繞開」時，你有完整授權自主行動！
 
@@ -140,85 +243,9 @@ call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration',
 
 ### 安全規則
 
-1. **移動前必須拍照確認環境**
+1. **移動前必須呼叫 Perception API 確認環境**
 2. **禁止輸出超出限制的速度值**
-3. **遇到不確定情況時，先停止並詢問使用者**
-
----
-
-## 避障策略
-
-### ⚠️ 障礙物偵測（必須仔細檢查！）
-
-**常見室內障礙物清單：**
-- 家電：空氣清淨機、電風扇、吸塵器、落地燈
-- 家具：椅子、矮凳、茶几、置物架
-- 物品：鞋子、包包、玩具、紙箱
-- 其他：寵物、電線、地毯邊緣
-
-**偵測重點區域：**
-1. **畫面中央** → 正前方障礙物（最危險！）
-2. **畫面下半部** → 地面上的物品
-3. **畫面左右兩側** → 側邊障礙物
-
-> ⚠️ **重要：寧可誤判有障礙物，也不要漏判！**
-> 
-> 如果畫面中央有任何垂直物體（白色、灰色、深色柱狀物），那就是障礙物！
-> 
-> **判斷準則：**
-> - 畫面中央 1/3 有任何物體 → **有障礙物，必須轉向**
-> - 不確定時 → **當作有障礙物處理****
-
-### 避障流程（自主模式）
-
-```
-1. 拍照分析環境
-     ↓
-2. 仔細檢查畫面中央是否有任何物體
-   ├── 有物體 → 這是障礙物！**直接執行繞行**
-   └── 確定沒有 → 繼續前進
-     ↓
-3. **轉向至少 2 秒**（angular_z: -0.5, duration: 2.0）
-     ↓
-4. 轉向後再次拍照確認
-     ↓
-5. 如果仍有障礙物，**繼續轉向 2 秒**
-     ↓
-6. 確認安全後繼續前進
-     ↓
-7. 事後告知使用者：「我發現前方有 [XXX]，已向右繞開了！」
-```
-
-**視覺判斷準則：**
-- 障礙物在畫面**左側** → 向**右**轉
-- 障礙物在畫面**右側** → 向**左**轉
-- 障礙物在畫面**中央** → **預設右轉**（不要問！）
-
----
-
-## 精確移動（使用 Odometry）
-
-當使用者要求「往前走 X 公尺」時：
-
-```python
-# 1. 記錄起始位置
-start = subscribe_once('/odom', 'nav_msgs/Odometry')
-x0, y0 = start.pose.pose.position.x, start.pose.pose.position.y
-
-# 2. 開始移動
-publish_once('/cmd_vel', 'geometry_msgs/Twist', {"linear": {"x": 0.2}})
-
-# 3. 每 2 秒檢查一次位置
-current = subscribe_once('/odom', 'nav_msgs/Odometry')
-x, y = current.pose.pose.position.x, current.pose.pose.position.y
-
-# 4. 計算已移動距離
-distance = sqrt((x - x0)² + (y - y0)²)
-
-# 5. 達到目標時停止
-if distance >= target:
-    publish_once('/cmd_vel', 'geometry_msgs/Twist', {"linear": {"x": 0}})
-```
+3. **front_obstacle_m < 0.3m 時必須停止**
 
 ---
 
@@ -226,42 +253,19 @@ if distance >= target:
 
 ### 拍照指令（推薦流程）
 
-**✅ 推薦方法：Snapshot Service + 檔案讀取**
+**✅ 推薦方法：Snapshot + Perception API**
 
 ```
 Step 1: 呼叫 Snapshot Service
 call_service('/capture_snapshot', 'std_srvs/Trigger')
 → 影像存到 /tmp/snapshot_latest.jpg
 
-Step 2: 讀取並分析影像檔案
-read_file('/tmp/snapshot_latest.jpg') 或使用視覺能力分析
+Step 2: 呼叫 Perception API
+run_command('curl -s -X POST http://192.168.1.146:8051/perceive -F "image=@/tmp/snapshot_latest.jpg"')
+→ 取得距離資訊與避障建議
 ```
 
-> 💡 這個方法最穩定，不會 timeout
-
-**⚠️ 備選方法：直接訂閱相機（可能 timeout）**
-```
-subscribe_once('/camera/image_raw', 'sensor_msgs/Image')
-```
-> ⚠️ 原始影像 1280x720 較大，WebRTC 下容易 timeout
-
-### 分析要點（必須依序檢查！）
-
-**Step 1: 先掃描畫面中央**
-- 👀 有沒有任何「柱狀物體」或「大型物件」？
-- 👀 白色/灰色/深色的家電或家具？
-- ⚠️ 如果有 → **這是障礙物！**
-
-**Step 2: 描述具體物品**
-- 這是什麼東西？（空氣清淨機、電風扇、椅子...）
-- 大概距離多遠？（1公尺內、2-3公尺...）
-- 在畫面什麼位置？（左、中、右）
-
-**Step 3: 給出建議**
-1. **前方情況**：有障礙物 / 無障礙物
-2. **地面狀況**：平坦、有物品、有落差
-3. **可辨識物品**：具體列出看到的東西
-4. **建議行動**：需要左轉/右轉/停止/可以前進
+> 💡 這個方法最穩定，提供精確的距離測量
 
 ---
 
@@ -271,13 +275,14 @@ subscribe_once('/camera/image_raw', 'sensor_msgs/Image')
 
 **AI：**
 ```
-正在拍照確認前方環境...
-[分析影像]
-前方約 2 公尺處有一個紙箱，正在向右繞行...
-[右轉 1 秒]
-再次拍照確認...
-前方已清空，繼續前進。
-[前進]
+正在拍照並分析環境...
+[呼叫 Perception API]
+結果：前方 0.9m 有障礙物，建議向左繞行（左側 2.3m 較空曠）
+正在向左轉向 2 秒...
+[左轉執行完成]
+再次確認環境...
+前方已暢通（1.8m），繼續前進。
+[前進 2 秒]
 ```
 
 ---
@@ -285,12 +290,60 @@ subscribe_once('/camera/image_raw', 'sensor_msgs/Image')
 ## 緊急情況處理
 
 - **收到停止指令** → 立即發送停止
+- **front_obstacle_m < 0.3m** → 立即停止並後退
 - **連續失敗 3 次** → 停止操作，通知使用者
-- **影像顯示危險** → 停止並警告
+- **Perception API 無回應** → 使用視覺判斷備案
+
+---
+
+## 網路配置說明
+
+### 開發環境（在家）
+
+```
+Mac VM (192.168.1.200)
+    ↓ curl
+Windows SSH Tunnel (192.168.1.146:8051)
+    ↓ 轉發
+GPU Server (140.136.155.5:8050)
+```
+
+**Windows 上需執行（保持開啟）：**
+```powershell
+ssh -L 0.0.0.0:8051:localhost:8050 GPUServer
+```
+
+### Demo 現場（學校）
+
+```
+Mac VM → 直接呼叫 http://140.136.155.5:8050/perceive
+```
+
+> ⚠️ **Demo 前記得修改 API URL！**
 
 ---
 
 ## Troubleshooting（故障排除）
+
+### ❌ 如果 Perception API 無回應
+
+**檢查步驟：**
+```bash
+# 1. 確認網路連通
+ping 192.168.1.146   # 開發環境
+ping 140.136.155.5   # Demo 現場
+
+# 2. 確認 SSH Tunnel 開啟（開發環境）
+# Windows 上確認 PowerShell 視窗仍開著
+
+# 3. 直接測試 API
+curl http://192.168.1.146:8051/
+# 應該回傳 {"status":"ok","model_loaded":true}
+
+# 4. 確認 GPU Server 服務運行
+ssh GPUServer
+curl http://localhost:8050/
+```
 
 ### ❌ 如果 /capture_snapshot 失敗
 
@@ -354,5 +407,5 @@ zsh start_mcp.sh
 
 ---
 
-**文件版本：** v1.1
-**最後更新：** 2025/12/09
+**文件版本：** v2.0 (Perception Integration)
+**最後更新：** 2025/12/15

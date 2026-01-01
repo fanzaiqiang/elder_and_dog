@@ -47,28 +47,40 @@
 
 ---
 
-## 尋物流程（迴圈修正版）
+## 尋物流程（避障 + 靠近）
 
 ```
-使用者：「找到椅子，走過去打招呼」
+使用者：「找 chair，遇到障礙就繞開，靠近 1m 內就打招呼」
 
-🔄 迴圈直到 distance_m < 0.5m 或最多 5 次：
+🔄 迴圈直到 distance_m < 1.0m 或最多 10 次：
 
-Step 1: find_object(target='chair')
+Step 1: find_object(target='chair') 定位目標
         ↓
-Step 2: 根據 direction 轉向
+Step 2: 如果 found=false → 原地旋轉 45° 尋找，回到 Step 1
+        ↓
+Step 3: 根據 direction 轉向目標
         - "左側" → angular_z: 0.5, duration: 1.5 (左轉)
         - "右側" → angular_z: -0.5, duration: 1.5 (右轉)
         - "正前方" → 跳過轉向
         ↓
-Step 3: find_object 再確認方向
+Step 4: 🚨 前進前必檢：find_object 確認前方無障礙物
+        - 如果 distance < 0.6m 且不是目標 → 觸發避障（Step 5）
+        - 如果安全 → 前進（Step 6）
         ↓
-Step 4: 如果 "正前方" → 前進 (linear_x: 0.3, duration: 2.0)
+Step 5: 避障動作：
+        a) 決定繞行方向（與障礙物反向）
+        b) 側向移動：angular_z ±0.5, duration 2.0
+        c) 前進繞過：linear_x 0.3, duration 2.0
+        d) 回到 Step 1 重新定位目標
         ↓
-Step 5: 重複 Step 1-4 直到夠近
+Step 6: 安全前進：linear_x 0.3, duration 2.0
+        ↓
+Step 7: 回到 Step 1 重新確認距離
 
-最後: go2_perform_action(action='Hello')
+當 distance_m < 1.0m：go2_perform_action(action='Hello')
 ```
+
+> ⚠️ **核心規則：每次「前進」之前，必須先 find_object 確認前方沒有障礙物！**
 
 ### 方向對應轉向
 
@@ -78,7 +90,6 @@ Step 5: 重複 Step 1-4 直到夠近
 | "右側" | **-0.5** | 右轉 1.5 秒 |
 | "正前方" | 0 | 不轉，直接前進 |
 
-> ⚠️ **每次移動後都要 find_object 重新確認！** 這樣才能持續修正。
 
 ---
 
@@ -160,5 +171,5 @@ call_service('/move_for_duration', 'go2_interfaces/srv/MoveForDuration',
 
 ---
 
-**文件版本：** v3.1 (GPU Server URL Update)  
-**最後更新：** 2025/12/31
+**文件版本：** v3.3 (1m Threshold + Obstacle Avoidance)  
+**最後更新：** 2026/01/01

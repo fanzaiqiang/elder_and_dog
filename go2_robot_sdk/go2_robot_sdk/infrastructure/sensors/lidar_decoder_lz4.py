@@ -28,7 +28,12 @@ def bits_to_points(buf: bytes, origin: list, resolution: float = 0.05) -> np.nda
                 x = x_base + bit_pos
                 points.append((x, y, z))
 
-    return np.array(points) * resolution + origin
+    if len(points) == 0:
+        return np.empty((0, 3), dtype=np.float32)
+
+    return np.array(points, dtype=np.float32) * resolution + np.array(
+        origin, dtype=np.float32
+    )
 
 
 class LidarDecoderLz4:

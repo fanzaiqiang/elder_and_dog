@@ -17,57 +17,53 @@ from ament_index_python import get_package_share_directory
 
 
 def update_meshes_for_cloud2(
-    positions: list, 
-    uvs: list, 
-    res: float, 
-    origin: list, 
-    intense_limiter: float
+    positions: list, uvs: list, res: float, origin: list, intense_limiter: float
 ) -> np.ndarray:
     """
     Process LiDAR point cloud data for ROS2 PointCloud2 message.
-    
+
     Args:
         positions: Raw position data from LiDAR
         uvs: UV coordinate data
         res: Resolution factor
         origin: Origin offset coordinates
         intense_limiter: Intensity threshold filter
-        
+
     Returns:
         Processed point cloud array with x,y,z,intensity
     """
-    # Convert positions to numpy array for vectorized operations
-    position_array = np.array(positions).reshape(-1, 3).astype(np.float32)
+    if positions is None or uvs is None:
+        return np.empty((0, 4), dtype=np.float32)
 
-    # Apply resolution scaling
+    position_array = np.array(positions, dtype=np.float32)
+    if position_array.size == 0 or position_array.size % 3 != 0:
+        return np.empty((0, 4), dtype=np.float32)
+
+    position_array = position_array.reshape(-1, 3)
     position_array *= res
-
-    # Apply origin offset
     position_array += origin
 
-    # Convert UV coordinates to numpy array
-    uv_array = np.array(uvs, dtype=np.float32).reshape(-1, 2)
+    uv_array = np.array(uvs, dtype=np.float32)
+    if uv_array.size == 0 or uv_array.size % 2 != 0:
+        return np.empty((0, 4), dtype=np.float32)
 
-    # Calculate intensities from UV values
+    uv_array = uv_array.reshape(-1, 2)
+    if uv_array.shape[0] != position_array.shape[0]:
+        return np.empty((0, 4), dtype=np.float32)
+
     intensities = np.min(uv_array, axis=1, keepdims=True)
-
-    # Combine positions with intensities
     positions_with_intensities = np.hstack((position_array, intensities))
-
-    # Filter out points below intensity threshold
     filtered_points = positions_with_intensities[
         positions_with_intensities[:, -1] > intense_limiter
     ]
-
-    # Remove duplicate points
     unique_points = np.unique(filtered_points, axis=0)
-    
+
     return unique_points
 
 
 class LidarDecoder:
     """Original WASM-based LiDAR decoder - the working implementation"""
-    
+
     def __init__(self) -> None:
         config = Config()
         config.wasm_multi_value = True
@@ -75,14 +71,17 @@ class LidarDecoder:
         self.store = Store(Engine(config))
 
         libvoxel_path = os.path.join(
-            get_package_share_directory('go2_robot_sdk'),
+            get_package_share_directory("go2_robot_sdk"),
             "external_lib",
-            'libvoxel.wasm')
+            "libvoxel.wasm",
+        )
 
         self.module = Module.from_file(self.store.engine, libvoxel_path)
 
         self.a_callback_type = FuncType([ValType.i32()], [ValType.i32()])
-        self.b_callback_type = FuncType([ValType.i32(), ValType.i32(), ValType.i32()], [])
+        self.b_callback_type = FuncType(
+            [ValType.i32(), ValType.i32(), ValType.i32()], []
+        )
 
         a = Func(self.store, self.a_callback_type, self.adjust_memory_size)
         b = Func(self.store, self.b_callback_type, self.copy_memory_region)
@@ -100,13 +99,25 @@ class LidarDecoder:
         self.buffer_ptr = int.from_bytes(self.buffer, "little")
 
         self.HEAP8 = (ctypes.c_int8 * self.memory_size).from_address(self.buffer_ptr)
-        self.HEAP16 = (ctypes.c_int16 * (self.memory_size // 2)).from_address(self.buffer_ptr)
-        self.HEAP32 = (ctypes.c_int32 * (self.memory_size // 4)).from_address(self.buffer_ptr)
+        self.HEAP16 = (ctypes.c_int16 * (self.memory_size // 2)).from_address(
+            self.buffer_ptr
+        )
+        self.HEAP32 = (ctypes.c_int32 * (self.memory_size // 4)).from_address(
+            self.buffer_ptr
+        )
         self.HEAPU8 = (ctypes.c_uint8 * self.memory_size).from_address(self.buffer_ptr)
-        self.HEAPU16 = (ctypes.c_uint16 * (self.memory_size // 2)).from_address(self.buffer_ptr)
-        self.HEAPU32 = (ctypes.c_uint32 * (self.memory_size // 4)).from_address(self.buffer_ptr)
-        self.HEAPF32 = (ctypes.c_float * (self.memory_size // 4)).from_address(self.buffer_ptr)
-        self.HEAPF64 = (ctypes.c_double * (self.memory_size // 8)).from_address(self.buffer_ptr)
+        self.HEAPU16 = (ctypes.c_uint16 * (self.memory_size // 2)).from_address(
+            self.buffer_ptr
+        )
+        self.HEAPU32 = (ctypes.c_uint32 * (self.memory_size // 4)).from_address(
+            self.buffer_ptr
+        )
+        self.HEAPF32 = (ctypes.c_float * (self.memory_size // 4)).from_address(
+            self.buffer_ptr
+        )
+        self.HEAPF64 = (ctypes.c_double * (self.memory_size // 8)).from_address(
+            self.buffer_ptr
+        )
 
         self.input = self.malloc(self.store, 61440)
         self.decompressBuffer = self.malloc(self.store, 80000)
@@ -173,22 +184,22 @@ class LidarDecoder:
             self.indices,
             self.faceCount,
             self.pointCount,
-            some_v
+            some_v,
         )
 
         self.get_value(self.decompressedSize, "i32")
         c = self.get_value(self.pointCount, "i32")
         u = self.get_value(self.faceCount, "i32")
 
-        positions_slice = self.HEAPU8[self.positions:self.positions + u * 12]
+        positions_slice = self.HEAPU8[self.positions : self.positions + u * 12]
         positions_copy = bytearray(positions_slice)
         p = np.frombuffer(positions_copy, dtype=np.uint8)
 
-        uvs_slice = self.HEAPU8[self.uvs:self.uvs + u * 8]
+        uvs_slice = self.HEAPU8[self.uvs : self.uvs + u * 8]
         uvs_copy = bytearray(uvs_slice)
         r = np.frombuffer(uvs_copy, dtype=np.uint8)
 
-        indices_slice = self.HEAPU8[self.indices:self.indices + u * 24]
+        indices_slice = self.HEAPU8[self.indices : self.indices + u * 24]
         indices_copy = bytearray(indices_slice)
         o = np.frombuffer(indices_copy, dtype=np.uint32)
 
@@ -197,14 +208,14 @@ class LidarDecoder:
             "face_count": u,
             "positions": p,
             "uvs": r,
-            "indices": o
+            "indices": o,
         }
 
 
 def get_voxel_decoder() -> LidarDecoder:
     """
     Get a LidarDecoder instance.
-    
+
     Returns:
         Initialized LidarDecoder (the working implementation)
     """
@@ -215,32 +226,29 @@ def decode_lidar_data(
     compressed_data: bytes,
     resolution: float = 0.01,
     origin: list = [0.0, 0.0, 0.0],
-    intensity_threshold: float = 0.1
+    intensity_threshold: float = 0.1,
 ) -> np.ndarray:
     """
     High-level function to decode LiDAR data.
-    
+
     Args:
         compressed_data: Compressed voxel map data
         resolution: Point cloud resolution
         origin: Origin offset
         intensity_threshold: Minimum intensity to include points
-        
+
     Returns:
         Processed point cloud array
     """
     decoder = get_voxel_decoder()
-    metadata = {
-        "origin": origin,
-        "resolution": resolution
-    }
-    
+    metadata = {"origin": origin, "resolution": resolution}
+
     result = decoder.decode(compressed_data, metadata)
-    
+
     # Convert to expected format
     positions = result["positions"]
     uvs = result["uvs"]
-    
+
     return update_meshes_for_cloud2(
         positions, uvs, resolution, origin, intensity_threshold
-    ) 
+    )

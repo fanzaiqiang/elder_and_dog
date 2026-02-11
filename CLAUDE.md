@@ -394,7 +394,7 @@ sudo ip route add 192.168.12.0/24 dev enp0s2
 7. ✅ 無紅字錯誤
 
 **測試報告位置：**
-- `docs/03-testing/slam-phase1_test_results_ROY.md`
+- `docs/archive/2026-02-11-restructure/testing/slam-phase1_test_results_ROY.md`
 
 ### Phase 2 測試（計畫中）
 
@@ -442,19 +442,19 @@ sudo ip route add 192.168.12.0/24 dev enp0s2
 - `docs/01-guides/slam_nav/Windows-ROS2-快速開始.md`：Windows 環境設置
 
 ### 設計文件
-- `docs/00-overview/專題目標.md`：願景、時程、風險管理、技術架構圖集（5 張 Mermaid 圖）
-- `docs/00-overview/開發計畫.md`：現況 vs 目標符合度評估
+- `docs/archive/2026-02-11-restructure/overview/專題目標.md`：願景、時程、風險管理、技術架構圖集（5 張 Mermaid 圖）
+- `docs/archive/2026-02-11-restructure/overview/開發計畫.md`：現況 vs 目標符合度評估
 - `docs/02-design/integration_plan.md`：W6-W9 技術整合藍圖
 - `docs/01-guides/坐標轉換/座標組間介面約定.md`：座標轉換介面規範
 
 ### 測試與日誌
-- `docs/03-testing/slam-phase1_test_results_ROY.md`：Phase 1 測試結果
+- `docs/archive/2026-02-11-restructure/testing/slam-phase1_test_results_ROY.md`：Phase 1 測試結果
 - `docs/04-notes/dev_notes/2025-11-30-dev.md`：最新開發日誌
 - `docs/04-notes/CHANGELOG.md`：文件與程式異動紀錄
 
 ### 團隊進度
-- `docs/00-overview/團隊進度追蹤/團隊進度.md`
-- `docs/00-overview/團隊進度追蹤/Roy第一階段計畫.md`
+- `docs/archive/2026-02-11-restructure/overview/團隊進度追蹤/團隊進度.md`
+- `docs/archive/2026-02-11-restructure/overview/團隊進度追蹤/Roy第一階段計畫.md`
 
 ---
 

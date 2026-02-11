@@ -580,8 +580,8 @@ graph TB
 
 - [開發計畫（時程規劃）](./開發計畫.md)
 - [ros-mcp-server 技術研究報告](../../ros-mcp-server/README.md)
-- [Phase 1 執行指南](../01-guides/slam_nav/README.md)
-- [CycloneDDS 配置指南](../01-guides/cyclonedds-config-guide.md)
+- [Phase 1 執行指南](./docs/01-guides/slam_nav/README.md)
+- [CycloneDDS 配置指南](./docs/archive/2026-02-11-restructure/guides/cyclonedds-config-guide.md)
 
 ---
 

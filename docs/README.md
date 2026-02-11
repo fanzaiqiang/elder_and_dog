@@ -1,70 +1,96 @@
-# Go2 智慧尋物系統文件索引（依現有檔案重整）
+# PawAI 文件中心
 
-**專案名稱：** 基於 Go2 機器狗的智慧陪伴與尋物系統  
-**最後更新：** 2025/11/23  
-🎯 **第一階段發表：2025/12/17**
-
-> 本頁僅列出目前實際存在的文件，並標註缺漏的 SOP/設計稿，避免讀者點到不存在的連結。
+**專案：** 老人與狗 (Elder and Dog) - Go2 機器狗智慧陪伴系統  
+**版本：** v4.0 (文件重構版)  
+**最後更新：** 2026-02-11
 
 ---
 
-## 🗂️ 目錄地圖（現況）
+## 🗺️ 文件導航
 
-| 資料夾 | 用途 | 代表文件 |
-|--------|------|----------|
-| `00-overview/` | 高層目標、計畫、進度 | `專題目標.md`，`開發計畫.md`，`團隊進度追蹤/` |
-| `01-guides/` | 操作指南與日常流程 | `quickstart_w6_w9.md`，`基礎動作操作說明.md`，`slam_nav/`，`坐標轉換/` |
-| `02-design/` | 技術整合藍圖 | `integration_plan.md` |
-| `03-testing/` | 測試結果與驗收 | `slam-phase1_test_results_ROY.md` |
-| `04-notes/` | 變更紀錄與開發日誌 | `CHANGELOG.md`，`dev_notes/` |
-
----
-
-## 00-overview · 專案概覽
-- [專題目標.md](./00-overview/專題目標.md) — 願景、時程、風險
-- [開發計畫.md](./00-overview/開發計畫.md) — 現況 vs 目標差異與行動項目
-- **團隊進度**：`00-overview/團隊進度追蹤/`
-  - [Roy第一階段計畫.md](./00-overview/團隊進度追蹤/Roy第一階段計畫.md)
-  - [團隊進度.md](./00-overview/團隊進度追蹤/團隊進度.md)
-  - b組/c組 第一階段計畫
-- **缺件提醒**：尚未有 Goal/現況符合度獨立文件（原索引提到的 Goal.md/claude_plan.md 不存在）。
-
-## 01-guides · 操作手冊
-- [quickstart_w6_w9.md](./01-guides/quickstart_w6_w9.md) — 每日任務 Checklist
-- [基礎動作操作說明.md](./01-guides/基礎動作操作說明.md) — 基本控制指令
-- SLAM / Nav2
-  - [README](./01-guides/slam_nav/README.md) — 測試總覽與導覽
-  - [slam+nav2小空間測試.md](./01-guides/slam_nav/slam+nav2小空間測試.md) — Phase 1 小空間最新指南
-  - [slam+nav2大空間測試.md](./01-guides/slam_nav/slam+nav2大空間測試.md) — Phase 2 大空間評估
-- 座標轉換
-  - [座標組間介面約定.md](./01-guides/坐標轉換/座標組間介面約定.md)
-- **缺件提醒**：尚未提供環境安裝/依賴管理/遠端 GPU/WebRTC 故障排查等 SOP（原 README 提到的 environment_setup_ubuntu.md、remote_gpu_setup.md、dependency_management.md… 目前不存在）。
-
-## 02-design · 架構與模組
-- [integration_plan.md](./02-design/integration_plan.md) — W6-W9 技術整合藍圖（Plan A：COCO）
-- **缺件提醒**：尚未有 VLM、座標轉換、FSM、Isaac Sim 詳細設計稿（可後續新增 `coco_vlm_development.md`、`coordinate_transformation.md`、`search_fsm_design.md`、`isaac_sim_integration.md` 等）。
-
-## 03-testing · 測試與驗收
-- [slam-phase1_test_results_ROY.md](./03-testing/slam-phase1_test_results_ROY.md) — Phase 1 測試結果
-- **缺件提醒**：尚未有 testing_plan/testing_and_verification 等測試計畫文件。
-
-## 04-notes · 歷程與手札
-- [CHANGELOG.md](./04-notes/CHANGELOG.md) — 文件與程式異動紀錄
-- `dev_notes/` — 每日開發日誌（2025-11-18~11-23 等）
+| 目錄 | 用途 | 主要內容 |
+|------|------|----------|
+| **[mission/](./mission/)** | 專案使命 | 願景、路線圖、目標 |
+| **[setup/](./setup/)** | 環境建置 | 硬體、軟體、網路配置指南 |
+| **[design/](./design/)** | 系統設計 | 架構、API、模組設計 |
+| **[testing/](./testing/)** | 測試驗收 | 測試計畫、報告、驗收文件 |
+| **[logs/](./logs/)** | 開發日誌 | 依日期組織的開發紀錄 |
+| **[assets/](./assets/)** | 靜態資源 | 圖片、圖表、截圖 |
+| **[archive/](./archive/)** | 歸檔文件 | 歷史版本與過時文件 |
 
 ---
 
-## 🚀 快速開始（依現有文件）
-1. 讀概覽：`00-overview/專題目標.md` → `00-overview/開發計畫.md`
-2. 看行動藍圖：`02-design/integration_plan.md`
-3. 執行 Phase 1/2：`01-guides/slam_nav/README.md` + 小/大空間測試文件
-4. 追進度：`00-overview/團隊進度追蹤/`（Roy/b組/c組）
-5. 查測試結果：`03-testing/slam-phase1_test_results_ROY.md`
+## 🚀 快速開始
+
+### 新手上路
+1. 閱讀專案願景：[mission/](./mission/)（待建立新內容）
+2. 環境設置：[setup/hardware/](./setup/hardware/)
+3. 系統架構：[design/modules/mcp_system_prompt.md](./design/modules/mcp_system_prompt.md)
+
+### 日常開發
+1. 查看最新進度：[logs/2026/01/](./logs/2026/01/)
+2. 查閱設計文件：[design/](./design/)
+3. 執行測試：[testing/](./testing/)
 
 ---
 
-## 🧭 待補文件清單（避免再次出現死鏈）
-- 環境/依賴/GPU/WebRTC SOP（安裝、proxy、uv 依賴管理）
-- VLM/座標轉換/FSM/Isaac Sim 詳細設計稿
-- 測試計畫與驗收標準（testing_plan / testing_and_verification）
-- 若新增文件，請同步更新本索引與 `04-notes/CHANGELOG.md`。
+## 📁 目錄結構詳解
+
+```
+docs/
+├── mission/              # 專案使命與願景
+│   ├── README.md
+│   ├── vision.md         # 專案願景（新版，待撰寫）
+│   └── roadmap.md        # 開發路線圖（待撰寫）
+│
+├── setup/                # 環境建置指南
+│   ├── README.md
+│   ├── hardware/         # 硬體設置
+│   ├── software/         # 軟體安裝
+│   ├── network/          # 網路配置
+│   └── slam_nav/         # SLAM/導航指南
+│
+├── design/               # 系統設計文件
+│   ├── README.md
+│   ├── modules/          # 模組設計
+│   └── research/         # 研究與分析
+│
+├── testing/              # 測試與驗收
+│   ├── README.md
+│   ├── 專題文件大綱.md
+│   └── reports/          # 測試報告
+│
+├── logs/                 # 開發日誌（依日期組織）
+│   ├── README.md
+│   ├── 2025/11/          # 2025年11月
+│   ├── 2025/12/          # 2025年12月
+│   └── 2026/01/          # 2026年1月
+│
+├── assets/               # 靜態資源
+│   ├── diagrams/         # 架構圖、流程圖
+│   ├── screenshots/      # 截圖
+│   └── photos/           # 照片
+│
+├── archive/              # 歸檔文件
+│   └── 2026-02-11-restructure/
+│
+└── CHANGELOG.md          # 文件變更紀錄
+```
+
+---
+
+## 📜 歷史文件
+
+如需查閱 2026-02-11 之前的文件，請參見：
+- [archive/2026-02-11-restructure/](./archive/2026-02-11-restructure/)
+
+---
+
+## 🔄 變更紀錄
+
+參見 [CHANGELOG.md](./CHANGELOG.md) 查看文件結構變更歷史。
+
+---
+
+**維護者：** FJU PawAI 專題組  
+**文件狀態：** ✅ 重構完成（Phase 8/8）

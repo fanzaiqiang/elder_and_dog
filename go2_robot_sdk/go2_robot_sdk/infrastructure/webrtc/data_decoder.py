@@ -9,25 +9,18 @@ Handles decoding of compressed LiDAR data and other binary messages from WebRTC.
 import json
 import struct
 import logging
+import os
 from typing import Optional, Dict, Any, Union
-
-try:
-    from ..sensors.lidar_decoder_lz4 import LidarDecoder as OriginalLidarDecoder
-
-    LZ4_DECODER_AVAILABLE = True
-except ImportError:
-    try:
-        from ..sensors.lidar_decoder import LidarDecoder as OriginalLidarDecoder
-
-        LZ4_DECODER_AVAILABLE = False
-    except ImportError:
-        OriginalLidarDecoder = None
-        LZ4_DECODER_AVAILABLE = False
 
 try:
     from ..sensors.lidar_decoder import LidarDecoder as WasmLidarDecoder
 except ImportError:
     WasmLidarDecoder = None
+
+try:
+    from ..sensors.lidar_decoder_lz4 import LidarDecoder as Lz4LidarDecoder
+except ImportError:
+    Lz4LidarDecoder = None
 
 
 logger = logging.getLogger(__name__)
@@ -51,20 +44,35 @@ class WebRTCDataDecoder:
         """
         self.enable_lidar_decoding = enable_lidar_decoding
         self._lidar_decoder = None
+        self._decoder_backend = "none"
 
         if enable_lidar_decoding:
             try:
-                if OriginalLidarDecoder:
-                    self._lidar_decoder = OriginalLidarDecoder()
-                    decoder_name = (
-                        "LidarDecoderLz4" if LZ4_DECODER_AVAILABLE else "LidarDecoder"
-                    )
-                    logger.info("Using %s", decoder_name)
-                else:
-                    raise ImportError("LiDAR decoder not available")
+                self._lidar_decoder, self._decoder_backend = self._create_lidar_decoder()
+                logger.info("Using LiDAR decoder backend: %s", self._decoder_backend)
             except Exception as e:
                 logger.warning(f"Failed to initialize LiDAR decoder: {e}")
                 self.enable_lidar_decoding = False
+
+    def _create_lidar_decoder(self):
+        backend = os.getenv("GO2_LIDAR_DECODER", "wasm").strip().lower()
+
+        if backend == "lz4":
+            if Lz4LidarDecoder:
+                return Lz4LidarDecoder(), "lz4"
+            raise ImportError("GO2_LIDAR_DECODER=lz4 but LZ4 decoder not available")
+
+        if backend == "wasm":
+            if WasmLidarDecoder:
+                return WasmLidarDecoder(), "wasm"
+            if Lz4LidarDecoder:
+                logger.warning("WASM decoder unavailable, falling back to LZ4")
+                return Lz4LidarDecoder(), "lz4"
+            raise ImportError("No LiDAR decoder backend available")
+
+        raise ValueError(
+            f"Unsupported GO2_LIDAR_DECODER='{backend}', expected 'wasm' or 'lz4'"
+        )
 
     def decode_array_buffer(self, buffer: bytes) -> Optional[Dict[str, Any]]:
         """
@@ -185,10 +193,7 @@ class WebRTCDataDecoder:
 
         if enabled and self._lidar_decoder is None:
             try:
-                if OriginalLidarDecoder:
-                    self._lidar_decoder = OriginalLidarDecoder()
-                else:
-                    raise ImportError("LiDAR decoder not available")
+                self._lidar_decoder, self._decoder_backend = self._create_lidar_decoder()
             except Exception as e:
                 logger.warning(f"Failed to initialize LiDAR decoder: {e}")
                 self.enable_lidar_decoding = False
@@ -217,7 +222,7 @@ def get_data_decoder(enable_lidar: bool = True) -> WebRTCDataDecoder:
 
 
 try:
-    _global_lidar_decoder = OriginalLidarDecoder() if OriginalLidarDecoder else None
+    _global_lidar_decoder = WasmLidarDecoder() if WasmLidarDecoder else None
 except Exception:
     _global_lidar_decoder = None
 
@@ -264,18 +269,18 @@ def deal_array_buffer(
                         decoded_data = _global_lidar_decoder.decode(
                             compressed_data, data
                         )
-                        logger.info("Decoded LiDAR using primary decoder")
+                        logger.debug("Decoded LiDAR using primary decoder")
                     except Exception:
                         if _global_wasm_decoder:
                             decoded_data = _global_wasm_decoder.decode(
                                 compressed_data, data
                             )
-                            logger.info("Decoded LiDAR using WASM fallback")
+                            logger.debug("Decoded LiDAR using WASM fallback")
                         else:
                             raise
                 elif _global_wasm_decoder:
                     decoded_data = _global_wasm_decoder.decode(compressed_data, data)
-                    logger.info("Decoded LiDAR using WASM fallback")
+                    logger.debug("Decoded LiDAR using WASM fallback")
 
                 if decoded_data is None:
                     raise ValueError("No LiDAR decoder available")

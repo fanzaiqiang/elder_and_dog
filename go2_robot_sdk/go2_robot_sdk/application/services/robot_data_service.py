@@ -70,13 +70,21 @@ class RobotDataService:
             stamp = data.get("stamp", 0.0)
 
             if positions is None or uvs is None:
-                logger.error(
-                    "LiDAR decode missing positions/uvs (resolution=%s, origin=%s)",
-                    resolution,
-                    origin,
-                )
+                if msg.get("compressed_data"):
+                    logger.debug(
+                        "LiDAR decoded points unavailable; using compressed voxel payload "
+                        "(resolution=%s, origin=%s)",
+                        resolution,
+                        origin,
+                    )
+                else:
+                    logger.error(
+                        "LiDAR decode missing positions/uvs (resolution=%s, origin=%s)",
+                        resolution,
+                        origin,
+                    )
             else:
-                logger.info(
+                logger.debug(
                     "LiDAR decoded points: positions=%s uvs=%s",
                     len(positions),
                     len(uvs),

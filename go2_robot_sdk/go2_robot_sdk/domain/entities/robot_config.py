@@ -20,6 +20,8 @@ class RobotConfig:
     publish_compressed_image: bool
     jpeg_quality: int
     enable_lidar: bool
+    minimal_state_topics: bool
+    lidar_point_stride: int
     conn_mode: str  # 'single' or 'multi'
 
     @classmethod
@@ -36,6 +38,8 @@ class RobotConfig:
         publish_compressed_image: bool,
         jpeg_quality: int,
         enable_lidar: bool,
+        minimal_state_topics: bool,
+        lidar_point_stride: int,
     ):
         """Создание конфигурации из параметров"""
         robot_ip_list = robot_ip.replace(" ", "").split(",")
@@ -57,5 +61,7 @@ class RobotConfig:
             publish_compressed_image=publish_compressed_image,
             jpeg_quality=jpeg_quality,
             enable_lidar=enable_lidar,
+            minimal_state_topics=minimal_state_topics,
+            lidar_point_stride=max(1, int(lidar_point_stride)),
             conn_mode=conn_mode,
         )

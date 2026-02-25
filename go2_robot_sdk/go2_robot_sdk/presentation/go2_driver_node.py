@@ -38,11 +38,11 @@ from ..infrastructure.ros2 import ROS2Publisher
 from ..infrastructure.webrtc import WebRTCAdapter
 
 logging.basicConfig(
-    level=logging.DEBUG,  # 允許所有日誌級別通過
+    level=logging.INFO,
     format="%(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # 設定 go2_driver_node 為 DEBUG 級別
+logger.setLevel(logging.INFO)
 
 
 class Go2DriverNode(Node):
@@ -111,6 +111,8 @@ class Go2DriverNode(Node):
                 ("publish_compressed_image", True),
                 ("jpeg_quality", 80),
                 ("enable_lidar", True),
+                ("minimal_state_topics", False),
+                ("lidar_point_stride", 1),
             ],
         )
 
@@ -149,6 +151,12 @@ class Go2DriverNode(Node):
             enable_lidar=self.get_parameter("enable_lidar")
             .get_parameter_value()
             .bool_value,
+            minimal_state_topics=self.get_parameter("minimal_state_topics")
+            .get_parameter_value()
+            .bool_value,
+            lidar_point_stride=self.get_parameter("lidar_point_stride")
+            .get_parameter_value()
+            .integer_value,
         )
 
         # Log configuration
@@ -165,6 +173,8 @@ class Go2DriverNode(Node):
         )
         self.get_logger().info(f"JPEG quality: {config.jpeg_quality}")
         self.get_logger().info(f"Enable lidar: {config.enable_lidar}")
+        self.get_logger().info(f"Minimal state topics: {config.minimal_state_topics}")
+        self.get_logger().info(f"LiDAR point stride: {config.lidar_point_stride}")
 
         return config
 
@@ -453,6 +463,9 @@ class Go2DriverNode(Node):
         """Main robot control loop"""
         while True:
             try:
+                if self.config.conn_type == "webrtc":
+                    await self.webrtc_adapter.ensure_connection(robot_id)
+
                 # Process joystick commands
                 if self.joy_state.buttons:
                     self.robot_control_service.handle_joy_command(

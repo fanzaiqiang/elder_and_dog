@@ -9,7 +9,7 @@ Implements clean architecture with real-time data publishing
 import asyncio
 import threading
 import rclpy
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import MultiThreadedExecutor
 
 from .presentation.go2_driver_node import Go2DriverNode
 
@@ -37,7 +37,7 @@ async def run_robot_connections(node: Go2DriverNode):
 
 async def spin_node(node: Go2DriverNode):
     """Run ROS2 node in a separate thread"""
-    executor = SingleThreadedExecutor()
+    executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     
     def spin_thread():
@@ -64,6 +64,7 @@ async def main_async():
     """Main asynchronous function"""
     # Initialize ROS2
     rclpy.init()
+    node = None
 
     try:
         # Create node with current event loop
@@ -105,8 +106,8 @@ async def main_async():
         # Resource cleanup
         try:
             # Disconnect from robots
-            if 'node' in locals() and hasattr(node, 'webrtc_adapter'):
-                for robot_id in node.webrtc_adapter.connections:
+            if node is not None and hasattr(node, 'webrtc_adapter'):
+                for robot_id in list(node.webrtc_adapter.connections):
                     await node.webrtc_adapter.disconnect(robot_id)
             
             # Close unfinished tasks

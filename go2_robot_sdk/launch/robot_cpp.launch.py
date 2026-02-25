@@ -85,6 +85,14 @@ class Go2NodeFactory:
             DeclareLaunchArgument('foxglove', default_value='true', description='Launch Foxglove Bridge'),
             DeclareLaunchArgument('joystick', default_value='true', description='Launch joystick'),
             DeclareLaunchArgument('teleop', default_value='true', description='Launch teleoperation'),
+            DeclareLaunchArgument('enable_video', default_value='false', description='Enable camera stream'),
+            DeclareLaunchArgument('decode_lidar', default_value='true', description='Decode lidar frames'),
+            DeclareLaunchArgument('publish_raw_image', default_value='false', description='Publish raw camera image'),
+            DeclareLaunchArgument('publish_compressed_image', default_value='false', description='Publish compressed camera image'),
+            DeclareLaunchArgument('publish_raw_voxel', default_value='false', description='Publish raw voxel map'),
+            DeclareLaunchArgument('enable_tts', default_value='false', description='Enable TTS node'),
+            DeclareLaunchArgument('minimal_state_topics', default_value='false', description='Subscribe only odometry + lidar RTC topics'),
+            DeclareLaunchArgument('lidar_point_stride', default_value='1', description='Keep every Nth lidar point before PointCloud2 publish'),
         ]
     
     def create_robot_state_nodes(self) -> List[Node]:
@@ -177,6 +185,15 @@ class Go2NodeFactory:
     
     def create_core_nodes(self) -> List[Node]:
         """Create core Go2 robot nodes"""
+        with_enable_video = LaunchConfiguration('enable_video', default='false')
+        with_decode_lidar = LaunchConfiguration('decode_lidar', default='true')
+        with_publish_raw_image = LaunchConfiguration('publish_raw_image', default='false')
+        with_publish_compressed_image = LaunchConfiguration('publish_compressed_image', default='false')
+        with_publish_raw_voxel = LaunchConfiguration('publish_raw_voxel', default='false')
+        with_enable_tts = LaunchConfiguration('enable_tts', default='false')
+        with_minimal_state_topics = LaunchConfiguration('minimal_state_topics', default='false')
+        with_lidar_point_stride = LaunchConfiguration('lidar_point_stride', default='1')
+
         return [
             # Main robot driver (clean architecture)
             Node(
@@ -187,7 +204,14 @@ class Go2NodeFactory:
                 parameters=[{
                     'robot_ip': self.config.robot_ip,
                     'token': self.config.robot_token,
-                    'conn_type': self.config.conn_type
+                    'conn_type': self.config.conn_type,
+                    'enable_video': with_enable_video,
+                    'decode_lidar': with_decode_lidar,
+                    'publish_raw_image': with_publish_raw_image,
+                    'publish_compressed_image': with_publish_compressed_image,
+                    'publish_raw_voxel': with_publish_raw_voxel,
+                    'minimal_state_topics': with_minimal_state_topics,
+                    'lidar_point_stride': with_lidar_point_stride,
                 }],
             ),
             # LiDAR processing node (C++ implementation)
@@ -220,6 +244,7 @@ class Go2NodeFactory:
                 package='speech_processor',
                 executable='tts_node',
                 name='tts_node',
+                condition=IfCondition(with_enable_tts),
                 parameters=[{
                     'api_key': os.getenv('ELEVENLABS_API_KEY', ''),
                     'provider': 'elevenlabs',

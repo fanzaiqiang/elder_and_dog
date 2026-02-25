@@ -60,6 +60,7 @@ class Go2Connection:
         self.on_open = on_open
         self.on_video_frame = on_video_frame
         self.decode_lidar = decode_lidar
+        self.enable_video = on_video_frame is not None
         
         # Initialize components
         self.http_client = HttpClient(timeout=10.0)
@@ -181,8 +182,10 @@ class Go2Connection:
         """Handle robot validation response"""
         try:
             if message.get("data") == "Validation Ok.":
-                # Turn on video
-                self.publish("", "on", "vid")
+                if self.enable_video:
+                    self.publish("", "on", "vid")
+                else:
+                    logger.debug("Video stream disabled by configuration")
                 
                 self.validation_result = "SUCCESS"
                 self.robot_validation = "OK"

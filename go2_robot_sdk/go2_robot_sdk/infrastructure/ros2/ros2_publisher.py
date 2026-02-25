@@ -4,6 +4,7 @@
 import logging
 
 import cv2
+import numpy as np
 
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
@@ -11,7 +12,6 @@ from geometry_msgs.msg import TransformStamped
 from go2_interfaces.msg import Go2State, IMU
 from go2_interfaces.msg import VoxelMapCompressed
 from sensor_msgs.msg import PointCloud2, PointField, JointState, CompressedImage
-from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
 from nav_msgs.msg import Odometry
 from cv_bridge import CvBridge
@@ -220,8 +220,16 @@ class ROS2Publisher(IRobotDataPublisher):
             lidar = robot_data.lidar_data
 
             points = update_meshes_for_cloud2(
-                lidar.positions, lidar.uvs, lidar.resolution, lidar.origin, 0
+                lidar.positions,
+                lidar.uvs,
+                lidar.resolution,
+                lidar.origin,
+                0,
+                self.config.lidar_point_stride,
             )
+
+            if points.size == 0:
+                return
 
             point_cloud = PointCloud2()
             point_cloud.header = Header(frame_id="base_link")
@@ -236,7 +244,15 @@ class ROS2Publisher(IRobotDataPublisher):
                 ),
             ]
 
-            point_cloud = point_cloud2.create_cloud(point_cloud.header, fields, points)
+            point_data = np.ascontiguousarray(points[:, :4], dtype=np.float32)
+            point_cloud.height = 1
+            point_cloud.width = int(point_data.shape[0])
+            point_cloud.fields = fields
+            point_cloud.is_bigendian = False
+            point_cloud.point_step = 16
+            point_cloud.row_step = point_cloud.point_step * point_cloud.width
+            point_cloud.is_dense = False
+            point_cloud.data = point_data.tobytes()
             self.publishers["lidar"][robot_idx].publish(point_cloud)
 
         except Exception as e:

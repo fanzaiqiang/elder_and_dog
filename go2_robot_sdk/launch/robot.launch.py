@@ -112,6 +112,50 @@ class Go2NodeFactory:
                 default_value="false",
                 description="MCP mode: enables snapshot_service, disables SLAM/Nav2",
             ),
+            DeclareLaunchArgument(
+                "enable_video", default_value="false", description="Enable camera stream"
+            ),
+            DeclareLaunchArgument(
+                "decode_lidar", default_value="true", description="Decode lidar frames"
+            ),
+            DeclareLaunchArgument(
+                "publish_raw_image",
+                default_value="false",
+                description="Publish raw camera image",
+            ),
+            DeclareLaunchArgument(
+                "publish_compressed_image",
+                default_value="false",
+                description="Publish compressed camera image",
+            ),
+            DeclareLaunchArgument(
+                "publish_raw_voxel",
+                default_value="false",
+                description="Publish raw voxel map",
+            ),
+            DeclareLaunchArgument(
+                "lidar_processing",
+                default_value="false",
+                description="Enable lidar post-processing nodes",
+            ),
+            DeclareLaunchArgument(
+                "enable_tts", default_value="false", description="Enable TTS node"
+            ),
+            DeclareLaunchArgument(
+                "minimal_state_topics",
+                default_value="false",
+                description="Subscribe only odometry + lidar RTC topics",
+            ),
+            DeclareLaunchArgument(
+                "lidar_point_stride",
+                default_value="1",
+                description="Keep every Nth lidar point before PointCloud2 publish",
+            ),
+            DeclareLaunchArgument(
+                "map",
+                default_value=os.getenv("MAP_YAML", "/home/jetson/go2_map.yaml"),
+                description="Map YAML path used by Nav2 localization",
+            ),
         ]
 
     def create_robot_state_nodes(self) -> List[Node]:
@@ -192,10 +236,13 @@ class Go2NodeFactory:
                 parameters=[
                     {
                         "target_frame": f"{namespace}/base_link",
+                        "queue_size": 2,
                         "min_height": -0.25,
                         "max_height": 0.5,
+                        "angle_increment": 0.0349,
+                        "scan_time": 0.1,
                         "range_min": 0.2,
-                        "range_max": 30.0,
+                        "range_max": 12.0,
                     }
                 ],
                 output="screen",
@@ -213,10 +260,13 @@ class Go2NodeFactory:
                 parameters=[
                     {
                         "target_frame": "base_link",
+                        "queue_size": 2,
                         "min_height": -0.25,
                         "max_height": 0.5,
+                        "angle_increment": 0.0349,
+                        "scan_time": 0.1,
                         "range_min": 0.2,
-                        "range_max": 30.0,
+                        "range_max": 12.0,
                     }
                 ],
                 output="screen",
@@ -225,6 +275,20 @@ class Go2NodeFactory:
     def create_core_nodes(self) -> List[Node]:
         """Create core Go2 robot nodes"""
         with_mcp_mode = LaunchConfiguration("mcp_mode", default="false")
+        with_map = LaunchConfiguration("map", default="/home/jetson/go2_map.yaml")
+        with_enable_video = LaunchConfiguration("enable_video", default="false")
+        with_decode_lidar = LaunchConfiguration("decode_lidar", default="true")
+        with_publish_raw_image = LaunchConfiguration("publish_raw_image", default="false")
+        with_publish_compressed_image = LaunchConfiguration(
+            "publish_compressed_image", default="false"
+        )
+        with_publish_raw_voxel = LaunchConfiguration("publish_raw_voxel", default="false")
+        with_lidar_processing = LaunchConfiguration("lidar_processing", default="false")
+        with_enable_tts = LaunchConfiguration("enable_tts", default="false")
+        with_minimal_state_topics = LaunchConfiguration(
+            "minimal_state_topics", default="false"
+        )
+        with_lidar_point_stride = LaunchConfiguration("lidar_point_stride", default="1")
 
         return [
             # Main robot driver (clean architecture)
@@ -238,14 +302,21 @@ class Go2NodeFactory:
                         "robot_ip": self.config.robot_ip,
                         "token": self.config.robot_token,
                         "conn_type": self.config.conn_type,
+                        "enable_video": with_enable_video,
+                        "decode_lidar": with_decode_lidar,
+                        "publish_raw_image": with_publish_raw_image,
+                        "publish_compressed_image": with_publish_compressed_image,
+                        "publish_raw_voxel": with_publish_raw_voxel,
+                        "minimal_state_topics": with_minimal_state_topics,
+                        "lidar_point_stride": with_lidar_point_stride,
                     }
                 ],
             ),
-            # LiDAR processing node (new separate package)
             Node(
                 package="lidar_processor",
                 executable="lidar_to_pointcloud",
                 name="lidar_to_pointcloud",
+                condition=IfCondition(with_lidar_processing),
                 parameters=[
                     {
                         "robot_ip_lst": self.config.robot_ip_list
@@ -256,11 +327,11 @@ class Go2NodeFactory:
                     }
                 ],
             ),
-            # Advanced point cloud aggregator
             Node(
                 package="lidar_processor",
                 executable="pointcloud_aggregator",
                 name="pointcloud_aggregator",
+                condition=IfCondition(with_lidar_processing),
                 parameters=[
                     {
                         "max_range": 20.0,
@@ -272,11 +343,11 @@ class Go2NodeFactory:
                     }
                 ],
             ),
-            # TTS Node (new separate package)
             Node(
                 package="speech_processor",
                 executable="tts_node",
                 name="tts_node",
+                condition=IfCondition(with_enable_tts),
                 parameters=[
                     {
                         "api_key": os.getenv("ELEVENLABS_API_KEY", ""),
@@ -405,6 +476,7 @@ class Go2NodeFactory:
                 ),
                 condition=IfCondition(nav2_enabled),
                 launch_arguments={
+                    "map": with_map,
                     "params_file": self.config.config_paths["nav2"],
                     "use_sim_time": use_sim_time,
                 }.items(),

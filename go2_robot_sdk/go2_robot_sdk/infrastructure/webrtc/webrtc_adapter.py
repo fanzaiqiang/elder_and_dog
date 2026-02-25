@@ -75,6 +75,25 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
             except Exception as e:
                 logger.error(f"Error disconnecting from robot {robot_id}: {e}")
 
+    async def ensure_connection(self, robot_id: str) -> bool:
+        conn = self.connections.get(robot_id)
+        if conn is None:
+            logger.warning("No connection for robot %s, reconnecting", robot_id)
+            await self.connect(robot_id)
+            return True
+
+        state = getattr(conn.pc, "connectionState", "unknown")
+        if state in ("failed", "closed"):
+            logger.warning(
+                "Connection state %s for robot %s, reconnecting", state, robot_id
+            )
+            await self.disconnect(robot_id)
+            await asyncio.sleep(0.5)
+            await self.connect(robot_id)
+            return True
+
+        return False
+
     def set_data_callback(self, callback: Callable[[RobotData], None]) -> None:
         """Set callback for data reception"""
         self.data_callback = callback
@@ -176,7 +195,22 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
         """Callback after connection validation"""
         try:
             if robot_id in self.connections:
-                for topic in RTC_TOPIC.values():
+                subscription_topics = [
+                    RTC_TOPIC["ROBOTODOM"],
+                ]
+
+                if not self.config.minimal_state_topics:
+                    subscription_topics.extend(
+                        [
+                            RTC_TOPIC["LOW_STATE"],
+                            RTC_TOPIC["LF_SPORT_MOD_STATE"],
+                        ]
+                    )
+
+                if self.config.enable_lidar or self.config.decode_lidar or self.config.publish_raw_voxel:
+                    subscription_topics.append(RTC_TOPIC["ULIDAR_ARRAY"])
+
+                for topic in subscription_topics:
                     self.connections[robot_id].data_channel.send(
                         json.dumps({"type": "subscribe", "topic": topic}))
             

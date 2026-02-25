@@ -17,7 +17,12 @@ from ament_index_python import get_package_share_directory
 
 
 def update_meshes_for_cloud2(
-    positions: list, uvs: list, res: float, origin: list, intense_limiter: float
+    positions,
+    uvs,
+    res: float,
+    origin: list,
+    intense_limiter: float,
+    point_stride: int = 1,
 ) -> np.ndarray:
     """
     Process LiDAR point cloud data for ROS2 PointCloud2 message.
@@ -35,21 +40,51 @@ def update_meshes_for_cloud2(
     if positions is None or uvs is None:
         return np.empty((0, 4), dtype=np.float32)
 
-    position_array = np.array(positions, dtype=np.float32)
-    if position_array.size == 0 or position_array.size % 3 != 0:
+    position_array = np.asarray(positions)
+    if position_array.size == 0:
         return np.empty((0, 4), dtype=np.float32)
 
-    position_array = position_array.reshape(-1, 3)
-    position_array *= res
-    position_array += origin
+    if position_array.dtype == np.uint8:
+        position_array = np.frombuffer(position_array.tobytes(), dtype=np.float32)
+    else:
+        position_array = position_array.astype(np.float32, copy=False)
 
-    uv_array = np.array(uvs, dtype=np.float32)
+    if position_array.size % 3 != 0:
+        return np.empty((0, 4), dtype=np.float32)
+
+    stride = max(1, int(point_stride))
+    position_array = position_array.reshape(-1, 3)
+    origin_array = np.asarray(origin, dtype=np.float32)
+
+    if intense_limiter <= 0:
+        if stride > 1:
+            position_array = position_array[::stride]
+        if position_array.size == 0:
+            return np.empty((0, 4), dtype=np.float32)
+        position_array = position_array * res
+        position_array += origin_array
+        intensities = np.ones((position_array.shape[0], 1), dtype=np.float32)
+        return np.hstack((position_array, intensities))
+
+    uv_array = np.asarray(uvs)
     if uv_array.size == 0 or uv_array.size % 2 != 0:
         return np.empty((0, 4), dtype=np.float32)
+
+    if uv_array.dtype == np.uint8:
+        uv_array = np.frombuffer(uv_array.tobytes(), dtype=np.float32)
+    else:
+        uv_array = uv_array.astype(np.float32, copy=False)
 
     uv_array = uv_array.reshape(-1, 2)
     if uv_array.shape[0] != position_array.shape[0]:
         return np.empty((0, 4), dtype=np.float32)
+
+    if stride > 1:
+        position_array = position_array[::stride]
+        uv_array = uv_array[::stride]
+
+    position_array = position_array * res
+    position_array += origin_array
 
     intensities = np.min(uv_array, axis=1, keepdims=True)
     positions_with_intensities = np.hstack((position_array, intensities))
@@ -59,9 +94,7 @@ def update_meshes_for_cloud2(
     if filtered_points.size == 0:
         filtered_points = positions_with_intensities
 
-    unique_points = np.unique(filtered_points, axis=0)
-
-    return unique_points
+    return filtered_points
 
 
 class LidarDecoder:
@@ -196,11 +229,11 @@ class LidarDecoder:
 
         positions_slice = self.HEAPU8[self.positions : self.positions + u * 12]
         positions_copy = bytearray(positions_slice)
-        p = np.frombuffer(positions_copy, dtype=np.uint8)
+        p = np.frombuffer(positions_copy, dtype=np.float32)
 
         uvs_slice = self.HEAPU8[self.uvs : self.uvs + u * 8]
         uvs_copy = bytearray(uvs_slice)
-        r = np.frombuffer(uvs_copy, dtype=np.uint8)
+        r = np.frombuffer(uvs_copy, dtype=np.float32)
 
         indices_slice = self.HEAPU8[self.indices : self.indices + u * 24]
         indices_copy = bytearray(indices_slice)

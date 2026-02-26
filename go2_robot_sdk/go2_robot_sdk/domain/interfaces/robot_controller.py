@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class IRobotController(ABC):
@@ -23,6 +24,6 @@ class IRobotController(ABC):
         pass
 
     @abstractmethod
-    def send_webrtc_request(self, robot_id: str, api_id: int, parameter: str, topic: str) -> None:
+    def send_webrtc_request(self, robot_id: str, api_id: int, parameter: Any, topic: str) -> None:
         """Send WebRTC request"""
         pass 

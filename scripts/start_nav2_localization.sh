@@ -16,6 +16,15 @@ export LIDAR_POINT_STRIDE="${LIDAR_POINT_STRIDE:-8}"
 MAP_YAML="${MAP_YAML:-/home/jetson/go2_map.yaml}"
 REQUESTED_MAP_YAML="$MAP_YAML"
 RVIZ2="${RVIZ2:-false}"
+FOXGLOVE="${FOXGLOVE:-false}"
+ENABLE_VIDEO="${ENABLE_VIDEO:-false}"
+PUBLISH_RAW_IMAGE="${PUBLISH_RAW_IMAGE:-false}"
+PUBLISH_COMPRESSED_IMAGE="${PUBLISH_COMPRESSED_IMAGE:-false}"
+
+if [ "$ENABLE_VIDEO" = "false" ] && { [ "$PUBLISH_RAW_IMAGE" = "true" ] || [ "$PUBLISH_COMPRESSED_IMAGE" = "true" ]; }; then
+  echo "WARN: publish_*_image=true requires enable_video=true, forcing enable_video=true"
+  ENABLE_VIDEO="true"
+fi
 
 resolve_map_yaml() {
   local requested="$1"
@@ -82,19 +91,21 @@ if ! command -v ros2 > /dev/null 2>&1; then
 fi
 
 echo "Launching Gate C (Nav2-only): slam:=false nav2:=true map:=$MAP_YAML"
+echo "Visualization: rviz2:=$RVIZ2 foxglove:=$FOXGLOVE"
+echo "Camera: enable_video:=$ENABLE_VIDEO raw:=$PUBLISH_RAW_IMAGE compressed:=$PUBLISH_COMPRESSED_IMAGE"
 ros2 launch go2_robot_sdk robot.launch.py \
   slam:=false \
   nav2:=true \
   autostart:=true \
   map:="$MAP_YAML" \
   rviz2:=$RVIZ2 \
-  foxglove:=false \
+  foxglove:=$FOXGLOVE \
   joystick:=false \
   teleop:=false \
-  enable_video:=false \
+  enable_video:=$ENABLE_VIDEO \
   decode_lidar:=true \
-  publish_raw_image:=false \
-  publish_compressed_image:=false \
+  publish_raw_image:=$PUBLISH_RAW_IMAGE \
+  publish_compressed_image:=$PUBLISH_COMPRESSED_IMAGE \
   lidar_processing:=false \
   minimal_state_topics:=true \
   lidar_point_stride:=$LIDAR_POINT_STRIDE \

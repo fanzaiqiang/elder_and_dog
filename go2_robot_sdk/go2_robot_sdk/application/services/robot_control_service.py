@@ -12,6 +12,11 @@ from ...domain.constants import RTC_TOPIC
 
 logger = logging.getLogger(__name__)
 
+MAX_LINEAR_X = 0.2
+MAX_LINEAR_Y = 0.2
+MAX_ANGULAR_Z = 0.35
+DEADBAND = 0.01
+
 
 class RobotControlService:
     """Service for robot control"""
@@ -22,18 +27,43 @@ class RobotControlService:
     def handle_cmd_vel(self, x: float, y: float, z: float, robot_id: str, obstacle_avoidance: bool = False) -> None:
         """Process movement command"""
         try:
-            logger.info(f"Received cmd_vel: x={x}, y={y}, z={z}, robot_id={robot_id}, obstacle_avoidance={obstacle_avoidance}")
-            if x != 0.0 or y != 0.0 or z != 0.0:
-                cmd = gen_mov_command(
-                    round(x, 2),
-                    round(y, 2),
-                    round(z, 2),
-                    obstacle_avoidance
-                )
-                logger.info(f"Sending movement command to robot {robot_id}: {cmd}")
-                self.controller.send_movement_command(robot_id, x, y, z)
+            clamped_x = self._apply_deadband(self._clamp(x, -MAX_LINEAR_X, MAX_LINEAR_X))
+            clamped_y = self._apply_deadband(self._clamp(y, -MAX_LINEAR_Y, MAX_LINEAR_Y))
+            clamped_z = self._apply_deadband(self._clamp(z, -MAX_ANGULAR_Z, MAX_ANGULAR_Z))
+
+            logger.info(
+                "Received cmd_vel: x=%.3f, y=%.3f, z=%.3f, robot_id=%s, obstacle_avoidance=%s",
+                x,
+                y,
+                z,
+                robot_id,
+                obstacle_avoidance,
+            )
+            cmd = gen_mov_command(
+                round(clamped_x, 2),
+                round(clamped_y, 2),
+                round(clamped_z, 2),
+                obstacle_avoidance,
+            )
+            logger.info(
+                "Sending movement command to robot %s: %s (clamped x=%.3f y=%.3f z=%.3f)",
+                robot_id,
+                cmd,
+                clamped_x,
+                clamped_y,
+                clamped_z,
+            )
+            self.controller.send_movement_command(robot_id, clamped_x, clamped_y, clamped_z)
         except Exception as e:
             logger.error(f"Error handling cmd_vel: {e}")
+
+    @staticmethod
+    def _clamp(value: float, min_value: float, max_value: float) -> float:
+        return max(min_value, min(max_value, value))
+
+    @staticmethod
+    def _apply_deadband(value: float) -> float:
+        return 0.0 if abs(value) < DEADBAND else value
 
     def handle_webrtc_request(self, api_id: int, parameter_str: str, topic: str, msg_id: str, robot_id: str) -> None:
         """Process WebRTC request"""

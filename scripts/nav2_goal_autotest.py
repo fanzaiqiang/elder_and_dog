@@ -43,11 +43,22 @@ def quaternion_from_yaw(yaw: float) -> Quaternion:
 class NavGoalAutoTester(Node):
     """透過 action client 發送單點導航並回報結果。"""
 
-    def __init__(self, distance: float, frame_id: str, timeout: float):
+    def __init__(
+        self,
+        distance: float,
+        frame_id: str,
+        timeout: float,
+        goal_x: Optional[float],
+        goal_y: Optional[float],
+        goal_yaw: Optional[float],
+    ):
         super().__init__("nav_goal_autotest")
         self._distance = distance
         self._frame = frame_id
         self._timeout = timeout
+        self._goal_x = goal_x
+        self._goal_y = goal_y
+        self._goal_yaw = goal_yaw
         self._amcl_pose: Optional[PoseWithCovarianceStamped] = None
 
         self._amcl_sub = self.create_subscription(
@@ -71,9 +82,7 @@ class NavGoalAutoTester(Node):
             if self._amcl_pose is not None:
                 if self._amcl_pose.header.frame_id != self._frame:
                     self.get_logger().warn(
-                        "收到的 frame_id=%s 與預設 %s 不同",
-                        self._amcl_pose.header.frame_id,
-                        self._frame,
+                        f"收到的 frame_id={self._amcl_pose.header.frame_id} 與預設 {self._frame} 不同"
                     )
                 return self._amcl_pose
             rclpy.spin_once(self, timeout_sec=interval)
@@ -89,11 +98,18 @@ class NavGoalAutoTester(Node):
             raise TimeoutError("等待 navigate_to_pose action server 超時")
 
     def _build_goal(self, pose: PoseWithCovarianceStamped, yaw_offset: float = 0.0) -> NavigateToPose.Goal:
-        """依據 AMCL 姿態建立目標點（向前 offset 公尺）。"""
+        """建立導航目標：優先使用絕對座標，否則採用相對前進距離。"""
         yaw = yaw_from_quaternion(pose.pose.pose.orientation)
         heading = yaw + yaw_offset
-        goal_x = pose.pose.pose.position.x + self._distance * math.cos(heading)
-        goal_y = pose.pose.pose.position.y + self._distance * math.sin(heading)
+
+        if self._goal_x is not None and self._goal_y is not None:
+            goal_x = self._goal_x
+            goal_y = self._goal_y
+            goal_yaw = self._goal_yaw if self._goal_yaw is not None else yaw
+        else:
+            goal_x = pose.pose.pose.position.x + self._distance * math.cos(heading)
+            goal_y = pose.pose.pose.position.y + self._distance * math.sin(heading)
+            goal_yaw = yaw
 
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = self._frame
@@ -101,7 +117,7 @@ class NavGoalAutoTester(Node):
         goal.pose.pose.position.x = goal_x
         goal.pose.pose.position.y = goal_y
         goal.pose.pose.position.z = pose.pose.pose.position.z
-        goal.pose.pose.orientation = quaternion_from_yaw(yaw)
+        goal.pose.pose.orientation = quaternion_from_yaw(goal_yaw)
         return goal
 
     def execute(self) -> bool:
@@ -109,12 +125,10 @@ class NavGoalAutoTester(Node):
         amcl_pose = self.wait_for_amcl_pose()
         self.wait_for_action_server()
         goal = self._build_goal(amcl_pose)
+        goal_yaw = yaw_from_quaternion(goal.pose.pose.orientation)
         self.get_logger().info(
-            "送出目標 x=%.3f, y=%.3f, yaw=%.3f rad (距離 %.2f m)",
-            goal.pose.pose.position.x,
-            goal.pose.pose.position.y,
-            yaw_from_quaternion(goal.pose.pose.orientation),
-            self._distance,
+            f"送出目標 x={goal.pose.pose.position.x:.3f}, y={goal.pose.pose.position.y:.3f}, "
+            f"yaw={goal_yaw:.3f} rad (距離 {self._distance:.2f} m)"
         )
         result_future = self._action_client.send_goal_async(goal, feedback_callback=self._feedback_cb)
         rclpy.spin_until_future_complete(self, result_future, timeout_sec=self._timeout)
@@ -130,6 +144,9 @@ class NavGoalAutoTester(Node):
 
         if not result.done():
             self.get_logger().error("等待導航結果逾時")
+            cancel_future = goal_handle.cancel_goal_async()
+            rclpy.spin_until_future_complete(self, cancel_future, timeout_sec=2.0)
+            self.get_logger().warn("已送出取消導航目標請求")
             return False
 
         outcome = result.result().result
@@ -137,7 +154,7 @@ class NavGoalAutoTester(Node):
         if status == outcome.SUCCEEDED:
             self.get_logger().info("✅ NavigateToPose 成功（status=SUCCEEDED）")
             return True
-        self.get_logger().error("❌ NavigateToPose 失敗，status=%d", status)
+        self.get_logger().error(f"❌ NavigateToPose 失敗，status={status}")
         if outcome.error_msg:
             self.get_logger().error("Nav2 回報：%s", outcome.error_msg)
         return False
@@ -146,9 +163,7 @@ class NavGoalAutoTester(Node):
     def _feedback_cb(self, feedback: NavigateToPose.Feedback) -> None:  # pragma: no cover - log only
         pose = feedback.feedback.current_pose.pose
         self.get_logger().info(
-            "回饋 - 機器狗位置 x=%.3f, y=%.3f",
-            pose.position.x,
-            pose.position.y,
+            f"回饋 - 機器狗位置 x={pose.position.x:.3f}, y={pose.position.y:.3f}"
         )
 
 
@@ -171,13 +186,41 @@ def parse_args() -> argparse.Namespace:
         default=30.0,
         help="等待 AMCL / action server / result 的逾時秒數",
     )
+    parser.add_argument(
+        "--x",
+        type=float,
+        default=None,
+        help="絕對目標點 x（map 座標）；若指定 x/y，會改用絕對座標模式",
+    )
+    parser.add_argument(
+        "--y",
+        type=float,
+        default=None,
+        help="絕對目標點 y（map 座標）；需與 --x 一起使用",
+    )
+    parser.add_argument(
+        "--yaw",
+        type=float,
+        default=None,
+        help="絕對目標 yaw（rad）；未指定時沿用當前 AMCL yaw",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if (args.x is None) ^ (args.y is None):
+        raise SystemExit("--x 與 --y 必須同時指定")
+
     rclpy.init()
-    tester = NavGoalAutoTester(distance=args.distance, frame_id=args.frame_id, timeout=args.timeout)
+    tester = NavGoalAutoTester(
+        distance=args.distance,
+        frame_id=args.frame_id,
+        timeout=args.timeout,
+        goal_x=args.x,
+        goal_y=args.y,
+        goal_yaw=args.yaw,
+    )
     try:
         success = tester.execute()
     except TimeoutError as exc:

@@ -1,7 +1,7 @@
 # Go2 導航避障 Weekly Execution Plan
 
-**更新日期：** 2026-03-01  
-**版本：** v2.1 (周計畫細節版)  
+更新日期：2026-03-02
+**版本：** v2.2 (D435 整合版)  
 **基於：** `docs/導航避障/落地計畫_v2.md`
 
 ---
@@ -277,6 +277,161 @@ tmux attach -t nav2dbg
 
 ---
 
+### Week 2.5 — D435 近場補強整合（A4）
+
+**前置條件：** Week 1 stride 已確定，`/scan` >= 8Hz 穩定
+
+**目標：** 將 D435 加入 local costmap 作為第二觀測源，補強近場偵測
+
+---
+
+#### Day 1 — D435 驅動安裝與驗證
+
+```bash
+# 1. 安裝 realsense2_camera ROS2 套件
+sudo apt install ros-humble-realsense2-camera ros-humble-realsense2-description
+
+# 2. 驗證硬體連接
+rs-enumerate-devices
+
+# 3. 單獨啟動 D435 節點測試
+ros2 launch realsense2_camera rs_launch.py \
+  depth_module.depth_profile:=424x240x15 \
+  enable_color:=false \
+  pointcloud.enable:=true \
+  decimation_filter.enable:=true \
+  temporal_filter.enable:=true \
+  spatial_filter.enable:=true
+
+# 4. 確認 topic 發布
+ros2 topic hz /camera/camera/depth/color/points
+ros2 topic echo /camera/camera/depth/color/points --once
+```
+
+**記錄：**
+- D435 PointCloud2 Hz: ___
+- tegrastats CPU 增量: ___%
+- 是否有 TF 錯誤: ___
+
+---
+
+#### Day 2 — URDF 切換與 TF 驗證
+
+```bash
+# 1. 切換 URDF 為 go2_with_realsense.urdf
+# 在 robot.launch.py 中修改 urdf 參數指向 go2_with_realsense.urdf
+
+# 2. colcon build
+colcon build --packages-select go2_robot_sdk
+
+# 3. 啟動與驗證 TF
+# 確認以下 TF 鏈正常：
+#   map -> odom -> base_link -> ... -> camera_mount_link -> camera_link
+ros2 run tf2_tools view_frames
+
+# 4. 在 RViz 中確認 camera_link 位置與實際相機安裝位置匹配
+```
+
+---
+
+#### Day 3 — 將 D435 加入 local costmap
+
+修改 `go2_robot_sdk/config/nav2_params.yaml`：
+
+```yaml
+# 只改 local_costmap 區段
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins: ["voxel_layer", "inflation_layer"]
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        observation_sources: scan d435
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          marking: true
+          clearing: true
+          obstacle_max_range: 3.0
+          raytrace_max_range: 4.0
+        d435:
+          topic: /camera/realsense2_camera_node/depth/obstacle_point
+          data_type: PointCloud2
+          marking: true
+          clearing: true
+          obstacle_max_range: 2.0
+          raytrace_max_range: 2.5
+          min_obstacle_height: 0.05
+          max_obstacle_height: 1.2
+```
+
+```bash
+colcon build --packages-select go2_robot_sdk
+
+# 測試 20 次短距導航（含低矮障礙物）
+for i in {1..20}; do
+  python3 scripts/nav2_goal_autotest.py --distance 0.5 --timeout 45 || true
+  sleep 1
+done
+```
+
+**驗證重點：**
+- RViz 中 local costmap 是否顯示 D435 偵測的障礙物
+- 是否有假障礙（地板、零星雜點）
+- 碰撞次數: ___
+
+---
+
+#### Day 4 — collision_monitor 配置
+
+```bash
+# 配置 nav2_collision_monitor 以 D435 作為獨立短程急停源
+# 範圍：0.2-1.5m 前向區域
+# 詳見 nav2 collision_monitor 文件
+
+# 測試 30 次短距導航（含低矮障礙物）
+for i in {1..30}; do
+  python3 scripts/nav2_goal_autotest.py --distance 0.5 --timeout 45 || true
+  sleep 1
+done
+```
+
+---
+
+#### Day 5 — D435 A/B 對照測試
+
+```bash
+# LiDAR-only vs LiDAR+D435 對照
+# 場景：低矮障礙物（0.15m 高紙箱）放於路徑上
+
+# Test A: LiDAR-only（停用 D435 observation source）
+# 跑 20 次，記錄碰撞/ABORT
+
+# Test B: LiDAR+D435
+# 跑 20 次，記錄碰撞/ABORT
+
+# 比較兩組差異
+```
+
+**Week 2.5 驗收標準：**
+- [ ] D435 PointCloud2 穩定 >= 10Hz
+- [ ] camera_link TF 在 RViz 中位置正確
+- [ ] local costmap 可見 D435 偵測障礙
+- [ ] CPU 增量 <= 15%
+- [ ] D435 離線時導航不中斷（自動回退 LiDAR-only）
+- [ ] 連續 30 次短距導航 0 碰撞（含低矮障礙場景）
+
+**Week 2.5 交付：**
+- `docs/testing/reports/week2.5_d435_integration.md` — D435 整合報告
+- 更新後的 `nav2_params.yaml`（含 D435 observation source）
+- 更新後的 launch 檔（含 realsense2_camera 啟動）
+- D435 A/B 對照測試結果
+- 安全的 Nav2 參數集（已 colcon build）
+- `scripts/tmux_nav2_debug.sh`
+- 失敗分類紀錄表
+
+---
+
 ## Phase B：控制體感優化
 
 ---
@@ -472,26 +627,20 @@ controller_server:
 
 ---
 
-### Week 7-8 — D435 融合（條件性）
+### Week 7+ — D435 進階應用 + AI 模型評估（條件性）
 
-**進入條件：**
-- LiDAR 主線已穩定
-- 需要更近場的細節
+**進入條件：** Phase A/B 穩定量產，D435 基礎整合已穩定
 
-**原則：**
-- 不取代 LiDAR 安全主線
-- 必須有明確降級策略（camera off => 回退 LiDAR-only）
-- 沙盒測試通過後才併入主線
+**D435 進階：**
+- depth-to-costmap 精細化調整（濾波器參數、視野裁剪）
+- D435 輔助的視覺子目標建議（shadow mode）
 
----
-
-### Week 9+ — 進階 AI 評估（研究化）
-
-**NoMaD/ViNT/DRL：**
-- 僅作研究評估，不直接接管實機主控制
+**AI 模型：**
+- NoMaD/ViNT/DRL 僅作研究評估，不直接接管實機主控制
 - 必須先通過沙盒測試
 - 明確降級策略
 
+> **注意：** Isaac ROS Visual SLAM 對 D435（無 IMU）支援不足，暫不採用。
 ---
 
 ## 附錄：每日執行檢查清單
@@ -547,9 +696,10 @@ zsh scripts/go2_ros_preflight.sh prelaunch  # 會清場
 這份周計畫把「深度報告」轉成**每週可執行、可驗收、可回滾**的具體任務：
 
 | 週次 | 主題 | 核心交付 | Gate |
-|------|------|----------|------|
+||------|------|----------|------|
 | W1 | 感測密度 | 選定 stride、A/B 表 | Hz >= 8, 成功率 >= 90% |
 | W2 | 安全包絡 | 安全參數、debug 流程 | 0 碰撞, ABORT <= 10% |
+| W2.5 | **D435 整合** | **近場補強、voxel_layer 配置** | **D435 >= 10Hz, 0 碰撞, CPU <= +15%** |
 | W3 | DWB 調優 | 優化 critics | 成功率 >= 95%, 0 碰撞 |
 | W4 | DWB 定版 | 可交付配置 | 200 次驗證, 可選 MPPI |
 | W5+ | 架構升級 | 評估報告 | 條件性進入 |

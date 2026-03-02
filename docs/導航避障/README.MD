@@ -1,7 +1,7 @@
 # Go2 導航避障系統 — 完整計畫
 
 > 專案：老人與狗 (Elder and Dog)  
-> 平台：Unitree Go2 + Jetson Orin Nano 8GB + 3D LiDAR  
+> 平台：Unitree Go2 + Jetson Orin Nano 8GB + 3D LiDAR + Intel RealSense D435  
 > 軟體主線：ROS2 Humble + Nav2 + AMCL + DWB
 
 **更新日期：** 2026-03-02  
@@ -14,9 +14,9 @@
 
 - **問題本質**：不是「控制器不夠先進」，而是「感測太稀疏 + 安全包絡太小」
 - **當前瓶頸**：`LIDAR_POINT_STRIDE=8` 丟棄 87.5% 點雲，近場幾乎失明
-- **解法方向**：先修感測 → 再調安全參數 → 最後優化體感
+- **解法方向**：先修 LiDAR 感測 → 再加 D435 近場補強 → 調安全參數 → 最後優化體感
 - **研究結論**：5 個開源專案皆「借概念不搬整套」，保留 Nav2 主線
-- **下一步**：完成 stride A/B 測試，選定生產 stride 值
+- **下一步**：完成 stride A/B 測試 → 整合 D435 作為近場第二觀測源
 
 **詳細落地計畫**：[落地計畫_v2.md](./落地計畫_v2.md)  
 **每週執行細節**：[weekly_plan.md](./weekly_plan.md)  
@@ -40,25 +40,31 @@
 ### 2.1 架構圖（text-based）
 
 ```text
-3D LiDAR/Robot State
-        |
-        v
-  Perception Pipeline -----> TF Tree (map/odom/base_link/front_camera)
-        |                                 |
-        v                                 v
- Local/Global Costmap <-------------- AMCL Localization
-        |                                 |
-        v                                 v
- SmacPlannerHybrid -----------------> DWB Controller
-        |                                 |
-        +------------- Nav2 --------------+
-                      |
-                      v
-            Safety Supervisor Layer
-        (TF gate / collision rules / mode guard)
-                      |
-                      v
-                   /cmd_vel
+3D LiDAR ──────┐     Intel RealSense D435 ──┐
+               │                             │
+               v                             v
+  pointcloud_to_laserscan          PointCloud2 (depth)
+         │                                   │
+         v                                   v
+       /scan ──────────┐  /camera/.../obstacle_point ──┐
+                       │                               │
+                       v                               v
+              Local/Global Costmap (voxel_layer: scan + d435)
+                       │
+                       v      TF Tree (map/odom/base_link/camera_link)
+                AMCL Localization        │
+                       │                 │
+                       v                 v
+              SmacPlannerHybrid ──────> DWB Controller
+                       │                 │
+                       +── Nav2 ─────────+
+                              │
+                              v
+                   Safety Supervisor Layer
+              (TF gate / collision_monitor / mode guard)
+                              │
+                              v
+                           /cmd_vel
 ```
 
 ### 2.2 TF 座標系
@@ -67,13 +73,16 @@
 - `odom`：短期連續運動座標。
 - `map`：全域定位座標。
 - `front_camera`：Go2 預設相機框架（非 `camera_link`）。
+- `camera_link`：Intel RealSense D435 相機框架（定義於 `go2_with_realsense.urdf`）。
+- `camera_mount_link`：D435 安裝支架框架。
 
 ### 2.3 關鍵 Topics 與 ownership
 
 | Topic | 主要擁有者 | 角色 |
 |---|---|---|
 | `/point_cloud2` | LiDAR 驅動/轉換節點 | 原始點雲輸入 |
-| `/scan` | `pointcloud_to_laserscan` 管線 | Nav2 近場障礙感知 |
+| `/scan` | `pointcloud_to_laserscan` 管線 | Nav2 近場障礙感知（LiDAR）|
+| `/camera/realsense2_camera_node/depth/obstacle_point` | realsense2_camera | D435 深度障礙點雲 |
 | `/amcl_pose` | AMCL | 定位估計輸出 |
 | `/local_costmap/costmap_raw` | Nav2 local costmap | 近場避障代價圖 |
 | `/navigate_to_pose/_action/status` | Nav2 action server | 任務狀態追蹤 |
@@ -83,8 +92,21 @@
 
 - 計算平台：Jetson Orin Nano 8GB
 - 機器人：Unitree Go2
-- 感測器：3D LiDAR
+- 主感測器：3D LiDAR（遠場 360° 障礙感知）
+- 輔助感測器：Intel RealSense D435 深度攝影機（近場 0.3-3m 前向障礙補強）
 
+### 2.5 感測器互補策略
+
+| 感測器 | 有效範圍 | 視角 | 角色 | 優勢 |
+|--------|---------|------|------|------|
+| 3D LiDAR | 0.3-12m | 360° | 主感測 | 全方位、高精度、不受光線影響 |
+| RealSense D435 | 0.3-3m | 87°×58° | 近場補強 | 偵測低矮/半透明障礙物、填補 LiDAR 近場盲區 |
+
+**互補邏輯**：
+- LiDAR 負責全域障礙感知（global + local costmap）
+- D435 僅作為 **local costmap 的第二觀測源**，強化近場（0.3-1.5m）偵測能力
+- D435 同時作為 `nav2_collision_monitor` 的獨立短程急停源
+- 若 D435 離線 → 自動回退至 LiDAR-only 模式，不影響導航安全主線
 ## 3. 現況基線
 
 - 目前主線：`Nav2 + AMCL + DWB`
@@ -120,6 +142,50 @@
 - **四足特有動態問題**：足部滑移與 `odom` 跳動會放大 AMCL 不確定性，導致局部路徑追蹤抖動。
 - **近場盲區對齊問題**：感知可視範圍必須與 `footprint + inflation + collision monitor` 保護範圍一致，否則會出現「看見但來不及停」或「能停但感測不到」的落差。
 
+### 4.3 D435 整合現況（Gap Analysis）
+
+- **已就緒**：`go2_with_realsense.urdf` 已定義完整 `camera_link` TF（`camera_mount_link → camera_link`，安裝於 Head_upper）
+- **未連接 Nav2**：`nav2_params.yaml` 的 `observation_sources` 僅有 `scan`，無 D435 深度來源
+- **未啟動驅動**：`robot.launch.py` 未包含 `realsense2_camera` 節點啟動
+- **未安裝 depthimage_to_laserscan**：無深度轉雷射掃描管線
+- **參考實作存在**：OM1 專案已驗證 D435 可用於 Go2 障礙偵測（`D435Provider`）
+
+**D435 整合後 nav2_params.yaml 目標配置（僅 local costmap 片段）：**
+
+```yaml
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins: ["voxel_layer", "inflation_layer"]
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        observation_sources: scan d435
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          marking: true
+          clearing: true
+          obstacle_max_range: 3.0
+          raytrace_max_range: 4.0
+        d435:
+          topic: /camera/realsense2_camera_node/depth/obstacle_point
+          data_type: PointCloud2
+          marking: true
+          clearing: true
+          obstacle_max_range: 2.0
+          raytrace_max_range: 2.5
+          min_obstacle_height: 0.05
+          max_obstacle_height: 1.2
+```
+
+### 4.4 D435 整合風險與緩解
+
+| 風險 | 嚴重度 | 緩解措施 |
+|------|---------|----------|
+| TF/extrinsics 不匹配 | 🟠 高 | 以 RViz 驗證 camera_link → base_link TF，以實際障礙物比對 costmap 表現 |
+| 深度雜訊/假障礙 | 🟠 高 | 啟用 decimation+temporal+spatial 濾波器；設 `min_obstacle_height: 0.05` 過濾地板 |
+| 計算/延遲尖峰 | 🟡 中 | 424×240 @ 15fps，停用 RGB；監控 tegrastats，超過 15% CPU 增量則降頻 |
+| D435 離線/當機 | 🟢 低 | 自動回退 LiDAR-only，D435 是輔助而非必要 |
 ## 5. 開源專案研究與採納決策
 
 | 專案 | 定位 | 立即採納 | 條件採納 | 暫不採納 |
@@ -146,6 +212,12 @@
 - **A1 感測密度**：執行 stride A/B（`8 -> 2 -> 1`），以 `/scan` 穩定率、有效回波、CPU 使用率共同決策。
 - **A2 安全包絡**：同步調整 `inflation/footprint/recovery`，先達成 0 碰撞再談速度體感。
 - **A3 可觀測性**：建立 incident packet 與 debug cockpit，讓每次失敗可被分類與追溯。
+- **A4 D435 近場補強（Stride 修復後）**：
+  - 安裝 `realsense2_camera` ROS2 驅動
+  - 切換 URDF 至 `go2_with_realsense.urdf`
+  - 將 D435 PointCloud2 加入 local costmap `voxel_layer` 作為第二觀測源
+  - 配置 `nav2_collision_monitor` 以 D435 作為短程急停源（0.2-1.5m）
+  - D435 參數：424×240 @ 15fps，停用 RGB，啟用 decimation + temporal + spatial 濾波器
 
 ### Phase B：控制體感優化（Week 3-4）
 
@@ -156,15 +228,16 @@
 ### Phase C：架構升級評估（Week 5+）
 
 - **C1 Cartographer（條件性）**：僅當主瓶頸確認為定位一致性時導入。
-- **C2 D435 融合（條件性）**：作為近場補強，不替代 LiDAR 安全主線。
+- **C2 D435 進階應用（條件性）**：在 Phase A 基礎整合穩定後，評估 depth-to-costmap 精細化調整、D435 輔助的視覺子目標建議。
 - **C3 AI 模型評估（研究化）**：採 shadow/sandbox 策略，不直接接管實機閉環。
 
+> **注意**：Isaac ROS Visual SLAM 對 D435（無 IMU）支援度不足，經評估暫不採用。若未來升級至 D435i，可重新考慮。
 ## 7. Gate 定義（進階硬條件）
 
 - **G1 安全**：0 碰撞（至少 200 次短距或 10 小時）。
 - **G2 可靠**：成功率 `>= 95%`，`ABORT <= 5%`。
-- **G3 感測**：`/scan` 穩定 `>= 8Hz`，無持續 TF 問題。
-- **G4 資源**：無 CPU 飽和，記憶體穩定。
+- **G3 感測**：`/scan` 穩定 `>= 8Hz`，無持續 TF 問題。D435 PointCloud2 穩定 `>= 10Hz`（啟用後）。
+- **G4 資源**：無 CPU 飽和，記憶體穩定。D435 處理不超過額外 15% CPU。
 
 ## 8. 啟動與操作指南
 
@@ -176,6 +249,7 @@
 - `FOXGLOVE`
 - `ENABLE_VIDEO`
 - `PUBLISH_COMPRESSED_IMAGE`
+- `ENABLE_REALSENSE` — 是否啟動 D435 驅動（預設 `false`，Phase A4 後設為 `true`）
 
 ### 8.2 每日操作流程
 
@@ -228,12 +302,13 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 |---|---|
 | `go2_robot_sdk/config/nav2_params.yaml` | Nav2 完整參數 |
 | `go2_robot_sdk/launch/robot.launch.py` | 主要啟動檔 |
+| `go2_robot_sdk/urdf/go2.urdf` | Go2 機器人模型（無 RealSense）|
+| `go2_robot_sdk/urdf/go2_with_realsense.urdf` | Go2 + RealSense D435 模型 |
 | `scripts/start_nav2_localization.sh` | Nav2 定位啟動 |
 | `scripts/go2_ros_preflight.sh` | 前後置檢查 |
 | `scripts/check_gate_c_rates.sh` | 速率檢查 |
 | `scripts/nav2_goal_autotest.py` | 自動化目標測試 |
 | `scripts/set_initial_pose.sh` | 初始座標設定 |
-| `go2_robot_sdk/urdf/go2.urdf` | Go2 機器人模型 |
 | `docs/導航避障/落地計畫_v2.md` | 詳細落地計畫 |
 | `docs/導航避障/weekly_plan.md` | 每週執行計畫 |
 | `docs/導航避障/開源專案/*.md` | 各專案採納決策 |
@@ -245,6 +320,8 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 3. 不把研究型模型直接接管主控制。
 4. 不用 benchmark 結果直接推論實機安全。
 5. 不在控制閉環中引入非確定性推理。
+6. 不在 LiDAR 主線未穩定前將 D435 設為唯一安全來源。
+7. 不在 D435 整合期間同時調整 LiDAR 參數（單變數原則）。
 
 ## 12. 結論
 
@@ -267,6 +344,10 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 | shadow mode | 影子模式 | 旁路觀測，不控制機器人 |
 | guarded assist | 守衛輔助 | 受安全層裁決的建議式控制 |
 
+| voxel layer | 體素層 | 3D 障礙物檢測的 costmap 插件 |
+| PointCloud2 | 點雲訊息 | ROS2 3D 點雲資料格式 |
+| collision monitor | 碰撞監控 | Nav2 獨立安全停車模組 |
+| D435 | 深度攝影機 | Intel RealSense D435 |
 ## 附錄 B：給未來 AI Agent 的備註
 
 本文件是導航避障子系統的**單一真相源 (Single Source of Truth)**。若需繼續工作：
@@ -275,9 +356,9 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 2. 查看 `weekly_plan.md` 確認本週具體任務
 3. 所有歷史採納決策記錄於 `開源專案/` 目錄
 4. 參數基線見第 3 節，任何修改需 A/B 驗證後才可寫入預設值
-5. **關鍵環境變數**：`GO2_LIDAR_DECODER=wasm`、`LIDAR_POINT_STRIDE`、`MAP_YAML`
+5. **關鍵環境變數**：`GO2_LIDAR_DECODER=wasm`、`LIDAR_POINT_STRIDE`、`MAP_YAML`、`ENABLE_REALSENSE`
 6. **已知陷阱**：`--distance` 相對目標會造成漂移，改用固定絕對座標 A↔B
 
 ---
 
-*文件版本：v1.0 | 維護：FJU PawAI 專題組*
+*文件版本：v2.0 | 維護：FJU PawAI 專題組*

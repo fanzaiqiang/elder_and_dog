@@ -4,7 +4,7 @@
 > 平台：Unitree Go2 + Jetson Orin Nano 8GB + 3D LiDAR + Intel RealSense D435  
 > 軟體主線：ROS2 Humble + Nav2 + AMCL + DWB
 
-**更新日期：** 2026-03-02  
+**更新日期：** 2026-03-03  
 **當前階段：** Phase A — 安全與穩定止血（Week 1-2）  
 **核心策略：** 先安全、再穩定、最後流暢
 
@@ -13,13 +13,14 @@
 ## 快速導讀（30 秒）
 
 - **問題本質**：不是「控制器不夠先進」，而是「感測太稀疏 + 安全包絡太小」
-- **當前瓶頸**：`LIDAR_POINT_STRIDE=8` 丟棄 87.5% 點雲，近場幾乎失明
+- **當前瓶頸**：感測資料新鮮度不足（低頻 + burst/gap），導致「可定位但不可安全連續避障」
 - **解法方向**：先修 LiDAR 感測 → 再加 D435 近場補強 → 調安全參數 → 最後優化體感
 - **研究結論**：5 個開源專案皆「借概念不搬整套」，保留 Nav2 主線
-- **下一步**：完成 stride A/B 測試 → 整合 D435 作為近場第二觀測源
+- **下一步**：先通過 freshness gate（`gap/age/stale-stop`）→ 再做 stride 與 D435 整合
 
 **詳細落地計畫**：[落地計畫_v2.md](./落地計畫_v2.md)  
 **每週執行細節**：[weekly_plan.md](./weekly_plan.md)  
+**研究綜整（最新）**：[Go2_低頻感測與BurstGap_研究綜整_2026-03-03.md](./Go2_低頻感測與BurstGap_研究綜整_2026-03-03.md)  
 **開源專案決策**：[開源專案/](./開源專案/)
 
 ---
@@ -236,8 +237,14 @@ local_costmap:
 
 - **G1 安全**：0 碰撞（至少 200 次短距或 10 小時）。
 - **G2 可靠**：成功率 `>= 95%`，`ABORT <= 5%`。
-- **G3 感測**：`/scan` 穩定 `>= 8Hz`，無持續 TF 問題。D435 PointCloud2 穩定 `>= 10Hz`（啟用後）。
-- **G4 資源**：無 CPU 飽和，記憶體穩定。D435 處理不超過額外 15% CPU。
+- **G3 感測新鮮度（主判準）**：
+  - 必報 `gap95/gap99/gap_max`、`age95/age99`
+  - 連續避障模式要求：`gap99 <= 0.5s`、`gap_max <= 1.0s`、`age99 <= 0.2s`
+  - 若未達標：禁止連續導航，僅允許停車定位或降級模式
+- **G4 stale-stop**：必須啟用感測逾時停車（stale-data stop）；故障注入 3 秒感測黑屏時不得繼續前進。
+- **G5 資源**：無 CPU 飽和，記憶體穩定。D435 處理不超過額外 15% CPU。
+
+> 註：`/scan` 平均 Hz 僅作輔助觀察，不可作為單一通過條件。
 
 ## 8. 啟動與操作指南
 
@@ -311,9 +318,16 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 | `scripts/set_initial_pose.sh` | 初始座標設定 |
 | `docs/導航避障/落地計畫_v2.md` | 詳細落地計畫 |
 | `docs/導航避障/weekly_plan.md` | 每週執行計畫 |
+| `docs/導航避障/Go2_低頻感測與BurstGap_研究綜整_2026-03-03.md` | 研究證據分級、Go/No-Go gate、實驗矩陣 |
 | `docs/導航避障/開源專案/*.md` | 各專案採納決策 |
 
-## 11. 不做事項
+## 11. 關鍵待驗證（研究空缺）
+
+1. **WebRTC vs CycloneDDS 同條件實測**：需完成 ABBA 實驗並輸出 `gap/age` 分位數比較。  
+2. **burst+gap 單一主因定錨**：目前高機率為排程/佇列背壓，仍需用 profiling + trace 封口。  
+3. **D435 + LiDAR 共跑瓶頸比例**：需量化 USB/CPU/RAM 對 `gap_max` 的貢獻，避免錯誤歸因。
+
+## 12. 不做事項
 
 1. 不在同一輪改多組關鍵參數。
 2. 不在安全 gate 未過前追求高速。
@@ -323,7 +337,7 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 6. 不在 LiDAR 主線未穩定前將 D435 設為唯一安全來源。
 7. 不在 D435 整合期間同時調整 LiDAR 參數（單變數原則）。
 
-## 12. 結論
+## 13. 結論
 
 一句話：「先讓機器狗『看得見』，再讓它『跑得順』；基礎不打穩，前沿模型只是空中樓閣。」
 
@@ -361,4 +375,4 @@ zsh scripts/go2_ros_preflight.sh prelaunch
 
 ---
 
-*文件版本：v2.0 | 維護：FJU PawAI 專題組*
+*文件版本：v2.1 | 維護：FJU PawAI 專題組*

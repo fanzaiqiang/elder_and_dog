@@ -195,3 +195,51 @@
 1. 優先切換/固定通訊路徑（CycloneDDS/Ethernet）
 2. 簡化或重構重負載資料轉換節點
 3. 強化獨立 safety layer（stale-data stop + collision monitor）
+
+---
+
+## 11. KIMI 深度研究採納（2026-03-03）
+
+本節整合 KIMI 報告的高價值內容，並明確區分「直接採納 / 條件採納 / 暫不採納」。
+
+### 11.1 可信度結論（本專案視角）
+
+- 策略價值：高（結構完整、主題覆蓋面廣）
+- 可直接採信度：中（部分數值需本場域驗證封口）
+- 決策定位：可作為研究輸入，不可取代本地量測結果
+
+### 11.2 直接採納（Now）
+
+1. 主線架構維持 `LiDAR -> /scan -> Nav2`，D435 先做近場補強，不直接取代 LiDAR 主安全來源。  
+2. 導航安全判準以資料新鮮度為核心（`gap/age`），不是只看平均 Hz。  
+3. 低頻抖動診斷順序採分層排查：TF/時間戳 -> costmap 更新 -> controller miss -> 通訊路徑。  
+4. 安全層必須獨立於 Nav2 主控制：感測逾時停車（stale stop）與 collision monitor。  
+
+### 11.3 條件採納（Need Local Evidence）
+
+以下主張僅作為假設，需完成本地 A/B 後才能升級為決策：
+
+1. WebRTC 與 CycloneDDS 的延遲差距幅度（包含是否達到特定倍數改善）。  
+2. D435 在 Orin Nano 的最佳 profile（解析度/FPS/filter）與 CPU 成本。  
+3. DWB/RPP/MPPI 在本場域低頻感測下的穩定排序。  
+4. 各 topic 健康頻率門檻的固定數值（必須由本地分位數報表定義）。  
+
+### 11.4 暫不採納（Reject for Now）
+
+1. 未附同條件基準（同 firmware、同場景、同負載）的精確數值結論。  
+2. 僅靠平均 Hz 或單次 demo 成功率宣稱「可安全避障」。  
+3. 在未通過 freshness/stale-stop gate 前，直接進入高複雜控制器或 3D 重管線升級。  
+
+### 11.5 KIMI 對應實驗收斂清單
+
+為避免「報告好看但不可落地」，KIMI 內容統一收斂到以下實驗：
+
+- E1：WebRTC vs CycloneDDS ABBA 對照（必報 `gap95/gap99/gap_max`、`age95/age99`）  
+- E2：D435 三組 profile 對照（headless 與 RViz+錄包雙負載）  
+- E3：故障注入（3 秒感測黑屏、+200ms 延遲）下的停車行為  
+- E4：controller 比較（DWB/RPP）僅在 E1-E3 通過後執行  
+
+### 11.6 與現有 Gate 的關係
+
+KIMI 報告不會覆蓋本文件第 4 節硬門檻；若 KIMI 建議與 gate 衝突，
+一律以本文件硬門檻（安全較嚴格者）為準。

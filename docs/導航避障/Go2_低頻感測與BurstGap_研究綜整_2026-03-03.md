@@ -141,3 +141,57 @@
 - `docs/導航避障/落地計畫_v2.md`（落地路線）
 
 若本文件與上述文件衝突，以「安全 gate 較嚴格者」為準。
+
+---
+
+## 10. 最新外部深研採納（2026-03-03，Minimax 版）
+
+本輪新增一份高品質外部研究（評估：9/10），其價值在於把「低頻與 burst+gap」轉成可操作量測與故障樹。以下內容採納為本專案下一輪實驗標準。
+
+### 10.1 新增採納要點
+
+- A/B 測試需採公平鎖定條件：
+  - 同版 `go2_ros2_sdk`、同 launch 組合、同測試場景
+  - 鎖定網卡/介面（CycloneDDS 指定 interface + peers）
+  - 固定 Jetson power/clocks 與 swap 策略
+  - 固定 D435 輸出配置（避免因相機負載污染通訊比較）
+- 指標以分位數為主，不再以平均 Hz 作為主結論：
+  - 必報 `gap95/gap99/gap_max`、`age95/age99`
+  - topic 最小集合：`/point_cloud2`、`/scan`、`/odom`、`/tf`、`/cmd_vel`
+- 根因優先順序採「故障樹」：
+  1. TF / MessageFilter
+  2. costmap update timeout
+  3. controller miss rate / scheduling starvation
+  4. 通訊路徑與介面選擇
+  5. Nav2 細參數
+
+### 10.2 新增硬性驗證項目
+
+- 端到端分段延遲拆解（至少近似版）：
+  - sensor stamp -> RX
+  - RX -> costmap update
+  - costmap update -> cmd_vel publish
+- 安全故障注入測試（必做）：
+  - 人工注入 3 秒感測黑屏，系統必須停車且不可自行前進
+  - 人工增加 200ms 延遲，檢查是否觸發降級或停車 gate
+
+### 10.3 立即執行的實驗矩陣（覆蓋 Matrix A/B/C）
+
+- Matrix A（通訊）：WebRTC vs CycloneDDS/Ethernet
+- Matrix B（管線）：decoder 路徑 1 vs 2
+- Matrix C（負載）：headless vs RViz+錄包
+
+每格最少 10 分鐘，採 ABBA 順序（減少熱飄與時間漂移偏差）。
+
+### 10.4 決策更新（何時停止微調 Nav2）
+
+若以下條件成立，停止「只調 Nav2」，改做架構變更：
+
+- 在固定低負載與 TF 修復後，仍持續 `gap99 > 0.5s` 或 `gap_max > 1.0s`
+- 為避免 miss rate 只能把 controller 頻率壓到過低，且安全速度上限無法滿足任務需求
+
+架構變更方向：
+
+1. 優先切換/固定通訊路徑（CycloneDDS/Ethernet）
+2. 簡化或重構重負載資料轉換節點
+3. 強化獨立 safety layer（stale-data stop + collision monitor）

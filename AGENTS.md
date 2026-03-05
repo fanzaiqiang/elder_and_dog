@@ -1,3 +1,34 @@
+## DEVELOPMENT ARCHITECTURE
+
+**Workspace Type:** Cross-machine development (WSL2 + Jetson Orin Nano)
+
+| Environment | Path | Purpose |
+|-------------|------|---------|
+| **Local WSL2** | `/home/roy422/jetson/elder_and_dog` | Code editing, opencode execution |
+| **Jetson Orin Nano** | `/home/jetson/elder_and_dog` | ROS2 runtime, GPU, hardware, colcon |
+
+**Sync Method:** `sshfs` - Jetson's `/home/jetson` mounted to WSL's `/home/roy422/jetson`
+**SSH Target:** `jetson-nano`
+
+### Command Execution Pattern
+
+```bash
+# [Local WSL2] - Use for: git, editing, opencode
+cd /home/roy422/jetson/elder_and_dog
+
+# [Jetson SSH] - Use for: ROS2, colcon, hardware
+ssh jetson-nano "cd /home/jetson/elder_and_dog && <command>"
+
+# Examples:
+# [Jetson] Build
+ssh jetson-nano "cd /home/jetson/elder_and_dog && colcon build --packages-select go2_robot_sdk"
+
+# [Jetson] Launch
+ssh jetson-nano "cd /home/jetson/elder_and_dog && source install/setup.bash && ros2 launch go2_robot_sdk go2_driver.launch.py"
+```
+
+---
+
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-01-24 08:04:25Z

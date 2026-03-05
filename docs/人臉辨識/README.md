@@ -55,42 +55,78 @@ py -u .\scripts\d435_quick_test.py --seconds 60 --width 848 --height 480 --fps 3
 - 可進入 Phase B（Jetson ROS2 驗證）
 - 後續實作應優先採用「過濾後深度」而非 RAW depth 做決策
 
-## 下一步（立即執行）
+### Phase B - Jetson ROS2 驗證（已完成）
 
-### Phase B - Jetson ROS2 驗證（待執行）
+執行環境：Jetson Orin Nano SUPER Developer Kit 8GB（zsh）+ RealSense D435。
 
-1. 安裝 RealSense ROS2 驅動
-
-```bash
-sudo apt update
-sudo apt install -y ros-humble-realsense2-camera
-```
-
-2. 啟動 D435（建議先用 848x480@30 + depth 對齊）
+實測命令：
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/humble/setup.zsh
 ros2 launch realsense2_camera rs_launch.py \
   depth_module.profile:=848x480x30 \
   rgb_camera.profile:=640x480x30 \
   align_depth.enable:=true
 ```
 
-3. 另一個終端驗證 topic 與頻率
+另一終端驗證：
 
 ```bash
-source /opt/ros/humble/setup.bash
-ros2 topic list | grep camera
-ros2 topic hz /camera/camera/depth/image_rect_raw
+source /opt/ros/humble/setup.zsh
+ros2 topic list | grep "/camera/camera/"
 ros2 topic hz /camera/camera/color/image_raw
-ros2 topic echo --once /camera/camera/aligned_depth_to_color/image_raw
+ros2 topic hz /camera/camera/aligned_depth_to_color/image_raw
 ```
 
-4. Phase B 通過標準
+實測結果：
 
-- `depth` 與 `color` topic 均存在且可取樣
-- `depth/image_rect_raw` 與 `color/image_raw` 平均頻率接近 30Hz（建議 >= 29Hz）
-- `aligned_depth_to_color` topic 有資料且可穩定輸出
+- `/camera/camera/color/image_raw` 約 `28.7 ~ 29.3 Hz`
+- `/camera/camera/aligned_depth_to_color/image_raw` 約 `28.9 ~ 29.4 Hz`
+- `/camera/camera/aligned_depth_to_color/image_raw` 可 `echo --once` 取得有效影像資料
+
+判定：
+
+- Phase B `PASS`
+- 可進入 Step 1/2 的人臉偵測 + 深度融合開發
+
+### Headless 人臉+深度探針（已完成）
+
+已提供腳本：`scripts/face_depth_probe_cv.py`
+
+- 人臉偵測：OpenCV Haar Cascade
+- 深度融合：bbox ROI depth median (`distance_m`)
+- Headless 輸出：每秒印 `face_count` 與 `distance`
+- debug topic：`/face_depth/debug_image`
+- compare topic：`/face_depth/compare_image`（左原圖，右標註）
+- 檔案快照：`/tmp/face_depth_debug.jpg`、`/tmp/face_depth_compare.jpg`
+
+執行方式：
+
+```bash
+source /opt/ros/humble/setup.zsh
+python3 /home/jetson/elder_and_dog/scripts/face_depth_probe_cv.py
+```
+
+若需瀏覽器即時畫面：
+
+```bash
+source /opt/ros/humble/setup.zsh
+ros2 run web_video_server web_video_server --ros-args -p port:=8081
+```
+
+瀏覽器 URL 範例：
+
+- `http://<jetson-ip>:8081/stream?topic=/face_depth/compare_image`
+- `http://<jetson-ip>:8081/stream?topic=/face_depth/debug_image`
+
+## 下一步（立即執行）
+
+目前 Step 1/2 的最小鏈路已通，建議直接進 Step 3（身份辨識）：
+
+1. 建立 face enrollment 腳本（蒐集 `person_name -> embedding`）
+2. 建立本地向量索引（先 Faiss，後續可換 Qdrant/Milvus）
+3. 建立 `face_identity_node`：輸入 face bbox/crop，輸出 `person_id/person_name/confidence`
+4. 先在 Jetson 單機打通 unknown/known 判定，再決定是否拆到雲端
 
 
 ### Step 1 - 邊緣端先做「人臉偵測 + 追蹤」

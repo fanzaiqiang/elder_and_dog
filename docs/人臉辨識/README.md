@@ -32,6 +32,67 @@ python scripts/d435_quick_test.py
 python scripts/d435_quick_test.py --seconds 120 --width 640 --height 480 --fps 30
 ```
 
+## 目前驗證進度（2026-03-05）
+
+### Phase A - Windows D435 Sanity Check（已完成）
+
+已完成腳本驗證，測試命令：
+
+```powershell
+py -u .\scripts\d435_quick_test.py --seconds 60 --width 848 --height 480 --fps 30
+```
+
+實測結果：
+
+- Avg FPS: `29.36`（PASS）
+- Avg hole ratio RAW (center 80%): `22.42%`（RAW 未過，屬常見現象）
+- Avg hole ratio FILTERED (center 80%): `0.00%`（PASS）
+- Center flicker p2p: `1.00 mm`（PASS）
+- OVERALL: `PASS`
+
+判定：
+
+- 可進入 Phase B（Jetson ROS2 驗證）
+- 後續實作應優先採用「過濾後深度」而非 RAW depth 做決策
+
+## 下一步（立即執行）
+
+### Phase B - Jetson ROS2 驗證（待執行）
+
+1. 安裝 RealSense ROS2 驅動
+
+```bash
+sudo apt update
+sudo apt install -y ros-humble-realsense2-camera
+```
+
+2. 啟動 D435（建議先用 848x480@30 + depth 對齊）
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  depth_module.profile:=848x480x30 \
+  rgb_camera.profile:=640x480x30 \
+  align_depth.enable:=true
+```
+
+3. 另一個終端驗證 topic 與頻率
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 topic list | grep camera
+ros2 topic hz /camera/camera/depth/image_rect_raw
+ros2 topic hz /camera/camera/color/image_raw
+ros2 topic echo --once /camera/camera/aligned_depth_to_color/image_raw
+```
+
+4. Phase B 通過標準
+
+- `depth` 與 `color` topic 均存在且可取樣
+- `depth/image_rect_raw` 與 `color/image_raw` 平均頻率接近 30Hz（建議 >= 29Hz）
+- `aligned_depth_to_color` topic 有資料且可穩定輸出
+
+
 ### Step 1 - 邊緣端先做「人臉偵測 + 追蹤」
 
 目標：Jetson 端穩定輸出 `face_bbox`、`track_id`、`confidence`。

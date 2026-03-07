@@ -11,7 +11,3 @@ Text-to-Speech (TTS), audio management, and voice synthesis for Go2 robot.
 __version__ = "1.0.0"
 __author__ = "brimo"
 __license__ = "BSD-3-Clause"
-
-__all__ = [
-    'tts_node'
-] 

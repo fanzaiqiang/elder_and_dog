@@ -1,588 +1,541 @@
-![Ros2 SDK](https://github.com/abizovnuralem/go2_ros2_sdk/assets/33475993/49edebbe-11b6-49c6-b82d-bc46257674bd)
+# PawAI Mission 入口頁
 
-# 專題計畫書：「老人與狗」
-
-## 基於 MCP 架構與生成式 AI 的 Go2 機器狗居家陪伴與尋物系統
-
-**專題名稱：** 老人與狗 (Elder and Dog)  
-**文件版本：** v3.3 (YOLO-World + DA3 融合版)  
-**修訂日期：** 2025年12月17日  
-**關鍵里程碑：** 2026/1/7 第一階段發表（剩餘 21 天）
+**專案名稱**：老人與狗 (Elder and Dog) / PawAI  
+**文件版本**：v1.0  
+**定案日期**：2026-03-07  
+**交付期限**：2026/4/13 (硬底線)
 
 ---
 
-## 0. 當前狀態摘要（2025/12/17 更新）
+## 1. 文件定位與閱讀方式
 
-### 📍 當前週次：W8 Day 3（第二個月）
+### 這份文件是什麼
 
-**專案整體進度：約 80%**
+這是 PawAI Mission 的**入口頁 (Entry Point)**，負責整合專案的核心決策、系統輪廓、主副線分工與關鍵導覽。
 
-### ✅ 已完成項目
+**定位說明**：
+- 不取代模組設計文件，而是**摘要 + 連結**
+- 不取代介面契約文件，而是**決策脈絡 + 驗收目標**
+- 提供**單一真相來源 (Single Source of Truth)** 給全團隊
 
-| 模組 | 進度 | 說明 |
-|------|------|------|
-| **ROS2 環境** | 100% | Ubuntu 22.04 + ROS2 Humble + go2_robot_sdk |
-| **SLAM + Nav2** | 100% | slam_toolbox + Nav2 導航堆疊驗證完成 |
-| **感測器整合** | 100% | LiDAR/Camera/IMU 資料串流正常 |
-| **雙橋接網路** | 100% | Mac VM ↔ Windows ↔ Go2 架構完成 |
-| **ros-mcp-server 整合** | 100% | rosbridge + MCP 控制鏈驗證成功 |
-| **snapshot_service** | 100% | 相機截圖服務運作正常 |
-| **move_for_duration** | 100% | 定時移動服務（安全限速）|
-| **Depth Anything V2** | 100% | DA3 Metric 深度估計，326ms 推論 |
-| **Go2 距離校正** | 100% | SCALE_FACTOR=0.60，誤差 <10% |
-| **感知融合設計** | 100% | YOLO + DA3 → JSON 架構設計完成 |
+### 誰應該閱讀
 
-### 🔄 進行中項目（W8 重點）
+| 角色 | 閱讀重點 | 延伸文件 |
+|------|----------|----------|
+| 新成員 (黃、陳) | 第 1、2、3、7 節 | [setup/README.md](../setup/README.md) |
+| Face Owner (楊) | 第 5、6、7 節 | [人臉辨識/README.md](../人臉辨識/README.md) |
+| Speech Owner (鄔) | 第 5、6、7 節 | [語音功能/README.md](../語音功能/README.md) |
+| Frontend (鄔) | 第 6、7、8 節 | [face_dashboard_nextjs/README.md](../../face_dashboard_nextjs/README.md) |
+| System Architect | 全篇 + 附錄 | [interaction_v1_contract.md](../architecture/interaction_v1_contract.md) |
 
-| 模組 | 進度 | 下一步 |
-|------|------|--------|
-| **YOLO-World 整合** | 10% | `/find_object` API 實作 |
-| **備案影片錄製** | 0% | 本週必須完成 |
-| **Go2 動作庫研究** | 100% | 35+ 動作可用（Hello, Dance 等）✅ |
+### 閱讀順序建議
 
-### 🎯 架構定位（12/17 更新）
+1. **快速瀏覽**：讀第 2 節 (一句話定位) + 第 6 節 (主副線)
+2. **理解架構**：讀第 4、5 節 (硬體與三層架構)
+3. **確認分工**：讀第 7 節 (團隊分工)
+4. **執行細節**：點選各模組連結深入閱讀
 
-**核心定位：** YOLO-World + DA3 融合架構
+---
 
-```
-使用者：「幫我找水瓶」
-      ↓
-LLM 語意理解（Claude/GPT）
-      ↓ 呼叫 /find_object API
-GPU Server 執行：
-  ├── YOLO-World：偵測物體 → bbox, center
-  └── DA3 Metric：深度估計 → distance
-      ↓ 融合輸出 JSON
-{ label: "water bottle", distance: 1.2m, direction: "左側", cmd_vel: {...} }
-      ↓
-Go2 機器狗執行移動
-```
+## 2. 專案一句話定位
 
-**設計理念：**
-- ❌ 不給 LLM 吃「生肉」（原始圖片 → 3-7 秒延遲）
-- ✅ 給 LLM 吃「熟食」（DA3 + YOLO JSON → **< 2.5 秒延遲**）
-- ✅ 雙模型並行：物體偵測 + 深度估計同時運行
-- ✅ API 回傳 cmd_vel：Safety Layer 已內建
+> 以 Unitree Go2 Pro 為載體，建立一套「以人機互動為主、導航避障為輔」的 embodied AI 機器狗系統。
+>
+> 核心不是把每個功能都做到最強，而是做出一個 **可模組化擴充、可多人分工、可實際展示的互動式系統平台**。
 
-> 💡 **為什麼不用純 VLM？** 純 VLM 成功率僅 5-6 成，延遲高且不可控。YOLO + DA3 融合方案快 3 倍、可調試。
+**關鍵詞解讀**：
+- **人機互動為主**：人臉辨識、中文語音對話、視覺互動是核心展示價值
+- **導航避障為輔**：基礎移動能力支援互動場景，但不追求完整自主導航
+- **可模組化**：Layer 2 各感知模組透過標準介面與 Layer 3 大腦連接
+- **可展示**：4/13 必須能跑通 Demo A/B/C，成功率高於 90%
 
-### 🐕 專案目標擴展（12/17 教授會議）
+---
 
+## 3. 專案背景與交付目標
+
+### 3.1 專案起源
+
+本專案為輔仁大學資管系專題，目標是打造一台「懂爺爺奶奶」的 AI 居家陪伴機器狗。從最初的「尋物功能」逐步演進為「智能互動 AI 夥伴」，核心價值轉向**多模態人機互動**與**情感陪伴**。
+
+### 3.2 為什麼是這個方向
+
+教授會議決議 (2025/12/17)：
 > 「尋物功能似不太能發揮亮點，我們再一起想想如何讓 Go2 用 MCP 發揮更多用途」
 
-**原目標**：尋物機器狗  
-**新目標**：**智能、互動式 AI 機器狗**
-
+戰略轉向：
 - 尋物只是功能之一，不是全部
-- Go2 具備 35+ 內建動作（Hello、Dance、FingerHeart 等）
-- 可透過 MCP 調用，實現「聽得懂人話」的多元互動
-
----
-
-## I. 專案願景與核心價值
-
-### 1. 願景
-
-讓 Go2 機器狗成為「懂爺爺奶奶」的 AI 居家夥伴，具備**語意理解**、**視覺感知**與**主動關懷**能力，解決長者「物品遺失的困擾」與「缺乏情感陪伴」兩大痛點。
-
-### 2. 核心理念：「老人與狗」
-
-這不只是一個會移動的工具，而是一隻能：
-- **聽得懂人話：** 理解模糊指令（如「幫我找眼鏡」）
-- **看得懂環境：** 透過 VLM 辨識居家物品與障礙物
-- **找得到東西：** 在家中自主巡視，引導長者尋回物品
-
-### 3. 技術定位
-
-| 項目 | 傳統方案 | 本專題方案 |
-|------|---------|-----------|
-| 指令理解 | 程式化指令 | **自然語言 (LLM)** |
-| 視覺處理 | 即時串流 / LLM Vision | **Perception API (DA3+YOLO) → JSON** |
-| 控制介面 | 自訂協定 | **MCP 標準協定** |
-| 導航策略 | 純座標導航 | **雙系統：LLM 規劃 + 確定性執行** |
-| 記憶系統 | 無 | **短期記憶 (任務狀態機)** |
-
----
-
-## II. 系統架構
-
-### 1. 高階架構圖
-
-```mermaid
-graph TD
-    subgraph User["👴 使用者端 (老人)"]
-        Voice["語音/文字指令<br/>('眼鏡在哪裡？')"]
-    end
-
-    subgraph Brain["🧠 AI 決策層 (大腦)"]
-        LLM["生成式 AI Agent<br/>(Claude / GPT-4o)"]
-        Memory["長期記憶庫<br/>(物品位置紀錄)"]
-    end
-
-    subgraph Bridge["🔌 通訊介面層 (神經)"]
-        MCP_Server["ros-mcp-server<br/>(標準化控制介面)"]
-        RosBridge["rosbridge<br/>(WebSocket Port 9090)"]
-    end
-
-    subgraph Edge["🐕 機器狗控制層 (手腳)"]
-        FSM["FSM Adapter<br/>(LLM 指令轉換)"]
-        ROS2["ROS2 Humble Core<br/>(go2_robot_sdk)"]
-        Nav2["Nav2 導航堆疊"]
-        Sensors["LiDAR & Camera"]
-        Action["Go2 運動控制"]
-    end
-
-    Voice --> LLM
-    LLM <--> Memory
-    LLM --"MCP Protocol"--> MCP_Server
-    MCP_Server <--> RosBridge
-    RosBridge <--> FSM
-    FSM --> ROS2
-    ROS2 --> Nav2
-    Nav2 --> Action
-    Sensors --"Snapshot (定時截圖)"--> MCP_Server
-    MCP_Server --"Image Analysis"--> LLM
-```
-
-### 2. 資料流詳解
-
-```
-使用者指令 "幫我找水"
-     ↓
-LLM (Claude/GPT) 理解意圖
-     ↓ MCP Protocol
-ros-mcp-server 轉譯
-     ↓ WebSocket
-rosbridge_server
-     ↓ ROS2 Topics
-FSM Adapter 節點
-     ├── /cmd_vel（簡單移動）
-     └── Nav2 Action（複雜導航）
-           ↓
-     Go2 機器狗執行
-           ↓
-Camera 截圖 → ros-mcp-server → LLM 視覺分析
-           ↓
-LLM："前方有障礙物，轉向中..."
-```
-
-### 3. 關鍵技術選型
-
-| 模組 | 技術方案 | 選擇理由 |
-|------|---------|---------|
-| **機器人大腦** | Claude 3.5 / GPT-4o | 強大的語意理解與推論能力 |
-| **通訊協定** | MCP (Model Context Protocol) | LLM 直接呼叫 ROS2 功能的標準介面 |
-| **MCP Server** | ros-mcp-server | 開源、支援 ROS1/ROS2、**支援 Action**、有 Go2 範例 |
-| **機器人平台** | Unitree Go2 + ROS2 Humble | 業界標準，穩定性高 |
-| **視覺方案** | Snapshot + VLM | 解決即時串流的高延遲問題 |
-| **導航框架** | Nav2 + slam_toolbox | 成熟的 SLAM 與導航套件 |
-| **網路拓樸** | 雙橋接網路 | Windows ↔ VM ↔ Go2 低延遲通訊 |
-
-### 4. 座標系統約定
-
-| 座標框架 | 說明 | 注意事項 |
-|---------|------|----------|
-| `map` | SLAM 世界座標系 | Nav2 目標點使用此框架 |
-| `base_link` | 機器狗本體中心 | 運動控制參考點 |
-| `front_camera` | 前置相機 | ⚠️ **不是** `camera_link`（go2.urdf 定義） |
-| `camera_link` | RealSense 相機 | 僅 `go2_with_realsense.urdf` 使用 |
-
-> ⚠️ **TF 查詢注意：** 使用預設 URDF 時，相機框架為 `front_camera`，不是 `camera_link`！
-
-### 4. 網路拓樸架構圖
-
-```mermaid
-graph TB
-    subgraph Host["🖥️ Host 端 (Windows/Mac)"]
-        Claude["Claude Desktop<br/>(MCP Client)"]
-        MCPServer["ros-mcp-server<br/>(uvx ros-mcp)"]
-    end
-
-    subgraph VM["🐧 Ubuntu VM (運算中樞)"]
-        RosBridge["rosbridge_server<br/>(Port 9090)"]
-        Go2SDK["go2_robot_sdk<br/>(ROS2 Driver)"]
-        Nav2Node["Nav2 + SLAM"]
-        FSMNode["fsm_adapter_node"]
-    end
-
-    subgraph Robot["🐕 Unitree Go2"]
-        Go2HW["機器狗硬體<br/>(WebRTC)"]
-    end
-
-    Claude --"stdio/HTTP"--> MCPServer
-    MCPServer --"WebSocket<br/>192.168.x.x:9090"--> RosBridge
-    RosBridge <--> Go2SDK
-    RosBridge <--> FSMNode
-    FSMNode --> Nav2Node
-    Go2SDK --"WebRTC"--> Go2HW
-```
-
----
-
-## III. 執行階段與時程規劃
-
-### 第一階段：核心驗證 (Proof of Concept)
-
-**時間：** 2025/12/06 ～ 2026/1/7（發表日）  
-**目標：** 展示「AI 聽懂指令並控制機器狗」的 MVP
-
-#### W6 (12/2-12/8)：環境重構與 MCP 串接
-
-- [x] ros-mcp-server Clone 與研究完成
-- [x] 安裝 rosbridge_server
-- [x] 測試 uvx ros-mcp 連線
-- [x] **里程碑：** Claude Desktop 輸入「往前走」，機器狗成功移動 ✅
-
-#### W7 (12/9-12/15)：視覺閉環 (Visual Loop)
-
-- [x] 實作 `/capture_snapshot` 服務
-- [x] 讓 LLM 讀取圖片並描述環境
-- [x] 實作 `/move_for_duration` 定時移動服務
-- [x] Phase A 移動控制測試（前進/後退/左轉/右轉/緊急停止）
-- [ ] Phase B Odometry 精確移動測試
-- [ ] Phase C 手動避障流程測試
-- [ ] Phase D Kilo Code 整合測試
-- [ ] **里程碑：** AI 看到障礙物，自主決定「轉向」
-
-#### W8 (12/16-12/22)：YOLO-World + DA3 融合實作 🔴
-
-- [x] 感知融合架構設計（12/17）
-- [x] Go2 動作庫研究（35+ 動作可用）
-- [ ] **GPU Server：YOLO-World 部署**
-  - [ ] 安裝 ultralytics + supervision
-  - [ ] 下載 yolov8s-world.pt 模型
-  - [ ] 建立 `yolo_world_model.py`
-  - [ ] 建立 `fusion_service.py`
-- [ ] **修改 perception_server.py**
-  - [ ] 新增 `/find_object` API
-  - [ ] 模型預熱 + 錯誤處理
-- [ ] **Mac VM 整合測試**
-- [ ] **里程碑：** `/find_object` API 回傳正確 JSON，延遲 < 2.5s
-
-#### W9 (12/23-12/28)：實機測試與備案
-
-- [ ] 實機驗證（3 場景 × 10 次）
-- [ ] 成功率達標（目標 > 80%）
-- [ ] **錄製備案影片**（教授要求，必做！）
-- [ ] 更新 MCP System Prompt
-- [ ] **里程碑：** 備案影片完成
-
-#### W10 (12/29-1/6)：Demo 準備
-
-- [ ] 壓力測試（連續運行 10 分鐘）
-- [ ] 準備簡報 PPT（三版架構演進）
-- [ ] 實機演練 Demo 腳本
-- [ ] 最終彩排 3 次
-- [ ] **里程碑：** Demo 成功率 > 80%
-
-### 第二階段：智能互動擴展 (寒假 1月中-2月)
-
-**核心目標：** 從「尋物工具」全面升級為「智能互動 AI 夥伴」
-
-#### 2.1 多模態互動系統
-
-- [ ] **語音整合**
-  - Whisper STT（語音轉文字）
-  - ElevenLabs / Azure TTS（文字轉語音）
-  - 實現「完全語音」互動體驗
-
-- [ ] **Web 控制介面**
-  - FastAPI 後端（取代 Claude Desktop）
-  - Web 前端（說話按鈕 + 即時影像回傳）
-  - 手機友善介面（長者易用性設計）
-
-#### 2.2 動作庫完整整合
-
-- [ ] **基礎互動動作**（優先）
-  - Hello (打招呼)、Stretch (伸懶腰)
-  - Dance1/Dance2 (跳舞)、FingerHeart (比愛心)
-  - WiggleHips (扭屁股)、Wallow (打滾)
-
-- [ ] **進階展示動作**（選用）
-  - FrontFlip (前空翻)、MoonWalk (月球漫步)
-  - Handstand (倒立)、Bound (彈跳)
-
-- [ ] **情境化動作序列**
-  - 「早安問候」：StandUp → Stretch → Hello
-  - 「歡迎回家」：Hello → Dance1 → FingerHeart
-  - 「任務完成慶祝」：Dance2 → WiggleHips
-
-#### 2.3 記憶與學習系統
-
-- [ ] **短期記憶**（任務級別）
-  - 當前目標追蹤
-  - 動作歷史記錄
-  - 任務狀態機（FSM）
-
-- [ ] **中期記憶**（對話級別）
-  - 當日互動歷史
-  - 使用者偏好學習
-  - 物品發現記錄
-
-- [ ] **長期記憶**（永久儲存）
-  - 物品位置地圖（SQLite）
-  - 使用者習慣資料庫
-  - 互動行為優化
-
-#### 2.4 Context Builder 節點
-
-- [ ] **環境感知增強**
-  - 雷達摘要：「前方 0.5m 有障礙物」
-  - 方位提示：「目標在 1 點鐘方向，約 2 公尺」
-  - 場景理解：「你在客廳，沙發在左側」
-
-- [ ] **時空推理能力**
-  - 「藥盒通常在哪？」→ 查詢歷史記錄
-  - 「剛剛看到的水瓶在哪？」→ 短期記憶查詢
-  - 「帶我去上次找到眼鏡的地方」→ 位置記憶
-
-### 第三階段：多代理人協同 (下學期 3-6月)
-
-**核心目標：** 實現「多角色 AI 夥伴」，從單一功能升級為全方位陪伴
-
-#### 3.1 LangGraph 多代理人架構
-
-```
-                    Supervisor Agent
-                    (總指揮 & 意圖判斷)
-                           |
-          +----------------+----------------+
-          |                |                |
-   Companion Agent   Navigation Agent   Memory Agent
-   (聊天陪伴)         (專業導航)        (記憶管理)
-          |                |                |
-          +----------------+----------------+
-                           |
-                     MCP Control Layer
-                           |
-                      Go2 Hardware
-```
-
-- [ ] **Supervisor Agent**（總指揮）
-  - 意圖分類：問候、尋物、閒聊、動作展示
-  - 任務分派：決定呼叫哪個專業 Agent
-  - 異常處理：任務失敗後的備案策略
-
-- [ ] **Companion Agent**（聊天陪伴）
-  - 情感陪伴：「今天過得怎麼樣？」
-  - 健康提醒：「該吃藥囉！」
-  - 天氣播報：「今天會下雨，記得帶傘」
-  - 趣味互動：說笑話、猜謎語、講故事
-
-- [ ] **Navigation Agent**（專業導航）
-  - 尋物專家：結合 SLAM + VLM + 記憶
-  - 巡邏模式：定時巡視各房間
-  - 跟隨模式：跟著使用者移動
-  - 安全監控：偵測異常（跌倒、長時間不動）
-
-- [ ] **Memory Agent**（記憶管理）
-  - 物品位置學習：「眼鏡最常在哪裡？」
-  - 行為模式分析：「爺爺通常 8 點吃早餐」
-  - 偏好記錄：「奶奶喜歡聽老歌」
-  - 重要事件提醒：「明天有醫院預約」
-
-#### 3.2 輕量化本地部署
-
-**目標：** 降低延遲與成本，實現「離線可用」
-
-- [ ] **本地 LLM 部署**
-  - 模型選擇：Mistral 14B / Qwen 8B-32B Light
-  - 部署平台：Ollama / LM Studio
-  - 推論優化：量化（INT4/INT8）、TensorRT
-
-- [ ] **邊緣運算優化**
-  - 將感知模型（YOLO + DA3）部署到本地 GPU
-  - 減少網路依賴，提升即時性
-  - 目標延遲：< 1s (完整尋物流程)
-
-#### 3.3 社會互動與擴展
-
-- [ ] **多機器狗協同**（研究方向）
-  - 2-3 台 Go2 協同巡邏
-  - 任務分工：一台尋物、一台陪伴
-  - Isaac Sim 模擬驗證
-
-- [ ] **居家物聯網整合**
-  - 連接智慧家電（燈光、空調）
-  - 「幫我開燈」→ MQTT 控制
-  - 「室內溫度多少？」→ 感測器查詢
-
-- [ ] **遠端關懷功能**
-  - 家人 App 即時監控
-  - 異常通知（長時間無互動）
-  - 視訊通話中繼（Go2 作為移動視訊站）
-
-### 第四階段：研究與論文 (大四全年)
-
-**核心目標：** 提升學術價值，產出研究成果
-
-#### 4.1 論文方向
-
-- [ ] **會議論文**（優先）
-  - ICRA / IROS (機器人頂會)
-  - 主題：「MCP-based LLM Control for Quadruped Robots」
-  - 貢獻：首次將 MCP 協定應用於四足機器人
-
-- [ ] **期刊論文**（進階）
-  - IEEE Robotics and Automation Letters (RA-L)
-  - 主題：「Multi-Agent LLM Framework for Elderly Care Robots」
-  - 貢獻：LangGraph 多代理人架構 + 長期記憶系統
-
-#### 4.2 技術創新點
-
-1. **MCP 標準化控制**
-   - 首次在 ROS2 機器人上實現 MCP
-   - 開源 ros-mcp-server 優化版本
-
-2. **輕量級感知融合**
-   - YOLO-World + DA3 架構
-   - 「熟食」策略（JSON vs 圖片）
-   - 延遲降低 3 倍（3-7s → 1.5-2.5s）
-
-3. **雙系統架構**
-   - System 2 (慢系統)：LLM 規劃
-   - System 1 (快系統)：確定性執行
-   - 可靠性 > 端到端 VLA
-
-4. **LangGraph 多代理人**
-   - Supervisor + Companion + Navigation + Memory
-   - 模組化、可擴展、易調試
-
-#### 4.3 社會影響評估
-
-- [ ] **使用者測試**
-  - 招募長者使用者（5-10 人）
-  - 問卷調查：易用性、接受度、實用性
-  - 數據收集：互動頻率、任務成功率
-
-- [ ] **倫理與隱私**
-  - 影像資料保護
-  - 使用者同意書
-  - 數據匿名化處理
-
----
-
-## 🚀 願景總結：三階段進化路線
-
-### 第一階段成果（1/7 Demo）
-✅ **尋物機器狗**：AI 能看懂環境、找到物品
-- 技術驗證：MCP + YOLO + DA3 融合
-- Demo 成功率：> 80%
-
-### 第二階段目標（寒假）
-🎯 **智能互動 AI 夥伴**：聽得懂人話、會做動作
-- 語音互動：完全語音控制
-- 動作展示：35+ 動作隨意調用
-- 記憶系統：記住物品位置
-
-### 第三階段願景（下學期）
-🌟 **多角色 AI 陪伴系統**：不只尋物，更是夥伴
-- 多代理人：陪伴 + 導航 + 記憶
-- 本地部署：低延遲、離線可用
-- 社會連結：遠端關懷 + 物聯網整合
-
-### 終極願景（大四）
-🏆 **學術與產業雙贏**
-- 論文發表：ICRA / IROS / RA-L
-- 開源貢獻：ros-mcp-server + LangGraph 框架
-- 社會價值：長者照護 + 情感陪伴
-
----
-
-> 💡 **核心理念：** 讓 Go2 從「會移動的工具」變成「懂人心的夥伴」
-
----
-
-## IV. 1/7 專題發表 Demo 劇本
-
-### 場景設置
+- Go2 具備 35+ 內建動作，可透過 MCP 調用
+- 目標是「聽得懂人話」的多元互動體驗
+
+### 3.3 交付目標 (4/13 硬底線)
+
+| 里程碑 | 日期 | 交付內容 | 驗收標準 |
+|--------|------|----------|----------|
+| 介面凍結 | 3/9 | 介面契約 v1、Demo 腳本 | 文件簽核完成 |
+| 攻守交換 | 3/16 | 所有模組標準交付 | 各 Owner 提交 DELIVERABLE.md |
+| 穩定化 | 4/6 | P0 完成度達標 | Demo A/C 成功率 >= 90% |
+| **最終展示** | **4/13** | **完整系統展示** | **三條 Demo 可現場執行** |
+
+### 3.4 展示場景設定
 
 模擬居家客廳：
-- 地上有一個紙箱（障礙物）
-- 桌上放著一瓶水（目標物）
-
-### 演示流程
-
-1. **指令下達**
-   > 「Go2，我口渴了，幫我找找桌上的水。」
-
-2. **AI 思考與規劃（螢幕展示）**
-   > "收到指令：找水。執行策略：先巡視環境。"
-   > "呼叫 `get_topics`... 準備移動。"
-
-3. **避障展示**
-   - 機器狗前進，遇到紙箱
-   - AI 截圖分析：「前方發現障礙物（紙箱），規劃繞行路徑...」
-   - 機器狗左轉繞過
-
-4. **發現目標**
-   - 機器狗看到桌子
-   - AI：「發現桌子，上面有一瓶水。確認為目標物。」
-
-5. **任務完成**
-   - 機器狗走到桌前停下
-   - AI：「爺爺，水在前面的桌子上喔！」
+- 地上有紙箱作為障礙物
+- 桌上放著水瓶作為互動道具
+- 機器狗能辨識人物、回應語音指令、執行動作
 
 ---
 
-## V. 風險管理與應對方案
+## 4. 系統載體與算力配置
 
-| 風險 | 等級 | 緩解措施 (Plan A) | 備案 (Plan B) |
-|------|------|------------------|---------------|
-| **現場網路不穩** | 🔴 高 | 手機熱點 + 本地 VM | 預錄「一鏡到底」影片 |
-| **LLM 產生幻覺** | 🟡 中 | Safety Filter（限速限範圍） | 預寫 Prompt 腳本 |
-| **影像傳輸延遲** | 🟡 中 | Snapshot 機制 | 降低解析度 |
-| **MCP Action 支援** | 🟡 中 | W7 Day 1 驗證 `send_action_goal()` | 失敗則啟動 FSM Adapter (Plan B) |
-| **Demo 實機故障** | 🟡 中 | 檢查電池與硬體 | Isaac Sim 模擬器展示 |
+### 4.1 硬體配置總覽
 
-> 💡 **Action 支援說明：** ros-mcp-server 提供 `send_action_goal()` 函式，但需驗證 rosbridge/rosapi 是否提供完整的 action services。若驗證失敗，則開發 FSM Adapter 作為轉接層。
+| 層級 | 設備 | 規格 | 用途 |
+|------|------|------|------|
+| **機器人載體** | Unitree Go2 Pro | 12 關節四足、內建 LiDAR/IMU | 運動執行、環境感知 |
+| **邊緣運算** | NVIDIA Jetson Orin Nano SUPER | 8GB VRAM、ARM 架構 | 即時感知、本地決策、ROS2 runtime |
+| **視覺感測** | Intel RealSense D435 | RGB-D 深度攝影機 | 人臉偵測、深度估計、手勢辨識 |
+| **遠端算力** | NVIDIA Quadro RTX 8000 | 48GB VRAM × 5 張 | ASR/TTS/LLM、模型訓練、雲端推理 |
 
-### 安全層建議（重要！）
+### 4.2 算力分工策略
 
-> ⚠️ **不建議讓 LLM 直接發布 `/cmd_vel`！**
->
-> **風險：** LLM 可能產生幻覺，輸出 `linear.x = 10.0`（它可能以為單位是 cm/s，但 ROS 是 m/s），造成機器狗暴衝。
->
-> **推薦架構：**
-> ```
-> LLM 輸出： {"action": "move", "direction": "forward", "distance": 1.0}
->      ↓
-> Safety Layer (FSM Adapter)： 轉換為安全的 cmd_vel，限制最大速度與加速度
->      ↓
-> /cmd_vel
-> ```
+```
+┌─────────────────────────────────────────────────────────────┐
+│  雲端端 (5×RTX 8000)                                        │
+│  ├── 卡 1-2：Qwen2.5-72B-INT4 (對話 LLM)                    │
+│  ├── 卡 3：Qwen3-ASR-1.7B (中文語音辨識)                    │
+│  └── 卡 4-5：Qwen3-TTS-1.7B + 備援 (語音合成)               │
+└─────────────────────────────────────────────────────────────┘
+                              ↑↓ 網路 (WebSocket/HTTP)
+┌─────────────────────────────────────────────────────────────┐
+│  邊緣端 (Jetson Orin Nano 8GB)                              │
+│  ├── YuNet + SFace (人臉偵測/識別)                          │
+│  ├── ROS2 Humble (系統整合)                                 │
+│  ├── Interaction Executive v1 (中控決策)                    │
+│  └── Silero VAD (語音活動偵測)                              │
+└─────────────────────────────────────────────────────────────┘
+                              ↑↓ USB/網路
+┌─────────────────────────────────────────────────────────────┐
+│  機器人 (Go2 Pro)                                           │
+│  ├── 運動控制 (stand/sit/lie/wave/spin)                     │
+│  └── 內建感測 (LiDAR/IMU/關節狀態)                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 4.3 關鍵數字
+
+| 指標 | 數值 | 說明 |
+|------|------|------|
+| Jetson 可用記憶體 | ~6.5 GB (扣除系統) | 需同時跑視覺+語音+ROS2 |
+| D435 影像串流 | 640×480 @ 30 FPS | RGB + Depth 對齊 |
+| 人臉偵測延遲 | < 100 ms (YuNet) | Jetson CUDA 優化後 |
+| 語音總延遲預算 | < 2.0 秒 | ASR + LLM + TTS 總和 |
+| 網路備援切換 | < 3 秒 | 雲端失效時降級本地 |
 
 ---
 
-## VI. 預期貢獻與創新點
+## 5. 三層架構總覽
 
-1. **技術創新：** 率先導入 **MCP (Model Context Protocol)** 於 ROS2 機器人控制
-2. **架構創新：** 提出 **LangGraph 多代理人架構** 的未來藍圖
-3. **社會價值：** 聚焦於 **「老人照護」** 議題，賦予機器人溫度與人文關懷
+### 5.1 架構設計原則
+
+- **單一控制權**：所有動作唯一出口在 Layer 3，避免多模組搶控制
+- **事件驅動**：Layer 2 各模組發布事件，Layer 3 訂閱後決策
+- **介面凍結**：3/9 後 topic/schema/action 不再變更
+
+### 5.2 三層架構圖
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 3: Interaction Executive v1（中控層）                  │
+│  ├─ 事件聚合器 (Event Aggregator)                           │
+│  ├─ 狀態機 (State Machine)                                  │
+│  ├─ 技能分派器 (Skill Dispatcher)                           │
+│  ├─ 安全仲裁器 (Safety Guard)                               │
+│  └─ 控制權管理 (Control Arbitration)                        │
+│  部署：Jetson Orin Nano 8GB                                  │
+└─────────────────────────────────────────────────────────────┘
+                              ↑↓ ROS2 Topics / Actions
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 2: Perception / Interaction Module Layer              │
+│  ├─ 人臉模組 (Face Owner: 楊)                               │
+│  │   └─ 輸出：/event/face_detected, /state/perception/face  │
+│  ├─ 語音模組 (Speech Owner: 鄔)                             │
+│  │   └─ 輸出：/event/speech_intent_recognized               │
+│  ├─ 手勢/姿勢模組 (Visual Owner: 楊/鄔)                     │
+│  │   └─ 輸出：/event/gesture_detected (P1)                  │
+│  └─ 統一輸出：事件 (event) + 狀態 (state)                   │
+│  部署：Jetson + 雲端混合                                     │
+└─────────────────────────────────────────────────────────────┘
+                              ↑↓ ROS2 Topics
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: Device / Runtime Layer                             │
+│  ├─ Go2 Driver (go2_robot_sdk)                              │
+│  ├─ RealSense D435 (realsense2_camera)                      │
+│  ├─ 音訊裝置 (ALSA/PulseAudio)                              │
+│  ├─ ROS2 Humble (rclpy/rclcpp)                              │
+│  └─ 邊緣模型執行 (ONNX Runtime/TensorRT)                    │
+│  部署：Jetson Orin Nano + Go2 Pro                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.3 資料流示意
+
+**主線互動流程 (Demo A)**：
+
+```
+使用者說話
+    ↓
+[D435 麥克風陣列] ──→ Layer 1 音訊擷取
+    ↓
+[雲端 ASR] ──→ 文字轉錄
+    ↓
+Layer 2 語音模組發布 /event/speech_intent_recognized
+    ↓
+Layer 3 Interaction Executive 接收事件
+    ↓
+狀態機決策 → 查詢當前 face_state → 決定回應策略
+    ↓
+呼叫 TTS 服務 → 發布 /tts 話題
+    ↓
+Go2 播放語音回應 + 執行對應動作 (wave/stand/look_left)
+```
+
+### 5.4 介面契約摘要
+
+**關鍵 Topic**：
+
+| Topic | 類型 | 說明 |
+|-------|------|------|
+| `/event/face_detected` | Event | 人臉出現/消失事件 |
+| `/event/speech_intent_recognized` | Event | 語音意圖識別結果 |
+| `/state/perception/face` | State | 人臉追蹤狀態 (10 Hz) |
+| `/state/interaction/speech` | State | 語音互動狀態 (5 Hz) |
+| `/state/executive/brain` | State | 大腦決策狀態 (5 Hz) |
+| `/execute_skill` | Action | 技能執行請求 |
+
+**完整介面規格**請見：[interaction_v1_contract.md](../architecture/interaction_v1_contract.md)
 
 ---
 
-## VII. 附錄：技術名詞解釋
+## 6. 主線/副線/優先序 (P0/P1/P2)
 
-| 術語 | 說明 |
+### 6.1 功能分級總表
+
+| 優先級 | 類型 | 內容 | 4/13 要求 | 負責人 |
+|:------:|:----:|------|:---------:|:------:|
+| **P0** | 主線 | 人臉辨識 (detection + track_id) | 必交 | 楊 |
+| **P0** | 主線 | 中文語音互動 (ASR + TTS) | 必交 | 鄔 |
+| **P0** | 主線 | AI 大腦 (Interaction Executive v1) | 必交 | System Architect |
+| **P0** | 主線 | 展示網站 (FastAPI + Next.js) | 必交 | 鄔 |
+| **P0** | 主線 | 安全動作 (stand/sit/lie/stop) | 必交 | System Architect |
+| P1 | 副線 | 手勢辨識 (wave/stop) | 展示亮點 | 楊/鄔 |
+| P1 | 副線 | 姿勢辨識 (point/come_here) | 展示亮點 | 楊/鄔 |
+| P1 | 副線 | 雲端 LLM 升級 (Qwen3.5) | 備援用 | System Architect |
+| P2 | 輔助 | 基礎導航/避障 | 加分項 | System Architect |
+| P2 | 輔助 | 喚醒詞 | 加分項 | - |
+
+### 6.2 P0 詳細說明
+
+**人臉辨識**：
+- 採用 YuNet + SFace 方案
+- 輸出：track_id (session 追蹤)、distance_m (深度距離)
+- 不做持久註冊，只做 session-level 追蹤
+- 詳見：[人臉辨識/README.md](../人臉辨識/README.md)
+
+**中文語音**：
+- 雲端優先 + 離線備援架構
+- ASR：Qwen3-ASR-1.7B (RTX 8000)
+- TTS：Qwen3-TTS-1.7B (RTX 8000)
+- 離線降級：Whisper tiny + MeloTTS (Jetson)
+- 延遲預算：< 2.0 秒 (push-to-talk 到 TTS 播放)
+- 詳見：[語音功能/README.md](../語音功能/README.md)
+
+**展示網站**：
+- 一站雙區：Showcase (實時監控) + Docs (文件展示)
+- 技術棧：FastAPI (後端) + Next.js (前端)
+- 功能：事件時間線、brain state 監控、一鍵 Demo、技能按鈕
+
+### 6.3 時程與優先序對照
+
+| 週次 | 日期 | 重點 | 交付目標 |
+|------|------|------|----------|
+| W1 | 3/7-3/9 | 定案 + 介面凍結 | 本文件 v1.0、介面契約凍結 |
+| W2 | 3/10-3/16 | 模組開發 | 各 Owner 提交 DELIVERABLE.md |
+| W3 | 3/17-3/23 | P0 穩定化 | Demo A/C 成功率 >= 85% |
+| W4 | 3/24-3/30 | P1-1 | 手勢或姿勢上一個，Demo B >= 70% |
+| W5 | 3/31-4/6 | P1-2 | 補齊另一個，Website 達標 |
+| W6 | 4/7-4/13 | 總彩排 | 凍結功能、只修穩定度 |
+| **最終** | **4/13** | **展示日** | **三條 Demo 現場執行** |
+
+---
+
+## 7. 五人分工與責任邊界
+
+### 7.1 RACI 風格分工表
+
+| 任務 | System Architect (你) | 楊 (Face) | 鄔 (Speech/Web) | 黃 | 陳 |
+|------|:---------------------:|:---------:|:---------------:|:--:|:--:|
+| **專案架構設計** | R/A | C | C | I | I |
+| **介面契約凍結** | R/A | C | C | I | I |
+| **Go2/Jetson 底層** | R/A | C | I | I | I |
+| **人臉模組開發** | C | R | I | C | C |
+| **語音模組開發** | C | I | R | C | C |
+| **手勢/姿勢研究** | A | R | R | C | C |
+| **前端展示開發** | C | I | R/A | C | C |
+| **AI 大腦 (Executive)** | R/A | C | C | C | C |
+| **系統整合測試** | R/A | C | C | C | C |
+| **文件整理** | A | C | C | R | R |
+| **Demo 腳本/彩排** | R/A | C | C | C | C |
+
+**符號說明**：
+- **R** (Responsible)：執行者，負責完成任務
+- **A** (Accountable)：責任者，最終負責、需核准
+- **C** (Consulted)：諮詢者，提供意見
+- **I** (Informed)：知會者，事後告知
+
+### 7.2 各角色詳細職責
+
+#### System Architect / Integration Owner
+
+**負責 (R/A)**：
+- 三層架構設計與介面契約凍結
+- Interaction Executive v1 (state machine + skill dispatcher)
+- Safety guard 與 control arbitration
+- Layer 1 (Go2 driver、Jetson runtime、D435、音訊)
+- 系統 bring-up (單一 launch 流程)
+- 網路降級策略 (Cloud On/Off + 本地備援)
+- 最終整合與 demo pipeline
+
+**協作 (C)**：
+- 與 Face Owner 協調 face event 欄位
+- 與 Speech Owner 協調 intent label/slots
+- 與 Frontend Owner 協調 website 顯示所需狀態流
+
+#### Face Owner (楊)
+
+**負責 (R)**：
+- Face module (RGB frame → FaceDetections)
+- track_id 穩定策略 (session 內穩定)
+- confidence/bbox/distance_m 輸出
+- 3/16 前：手勢/姿勢研究
+- 3/16 後：轉攻語音/人臉應用層 (依 Architect 調度)
+
+**交付**：
+- `DELIVERABLE.md` (啟動指令、輸入輸出、需求、限制、驗證方式)
+- Demo 成功率達標 (90%)
+
+#### Speech Owner / Frontend Lead (鄔)
+
+**負責 (R)**：
+- 中文 ASR → intent (固定 intent 集)
+- Push-to-talk 流程設計
+- TTS node 串接
+- 展示網站 (FastAPI + Next.js)
+- 3/16 前：手勢/姿勢研究
+- 3/16 後：前端展示主力 + 語音/人臉應用層
+
+**交付**：
+- Speech module `DELIVERABLE.md`
+- Website `DELIVERABLE.md`
+- 延遲量測報告
+
+#### 支援成員 (黃、陳)
+
+**負責 (R)**：
+- 文件整理與歸檔
+- 支援各模組測試
+- 後續切入技術工作 (依進度調度)
+
+**交付**：
+- 文件維護
+- 測試報告
+
+---
+
+## 8. Demo 與驗收重點
+
+### 8.1 三條 Demo 路線
+
+| Demo | 名稱 | 內容 | 成功率要求 | 延遲要求 |
+|:----:|------|------|:----------:|----------|
+| A | 主線閉環 | 人臉 + 語音 + 回應 | >= 90% (9/10) | 語音 < 2.0s |
+| B | 視覺互動 | 手勢/姿勢 + 動作 | >= 70% (7/10) | 視覺 < 1.0s |
+| C | 網站同步 | 一鍵 Demo + 狀態顯示 | >= 90% (9/10) | 同步 < 300ms |
+
+### 8.2 Demo A：人臉 + 語音 + 回應 (P0 主線)
+
+**流程**：
+1. Face module 發布 `/event/face_detected`
+2. 使用者 Push-to-talk 說中文指令
+3. Speech module 發布 `/event/speech_intent_recognized`
+4. Brain 更新 `/state/executive/brain`
+5. Brain 發布 `/tts` (中文回應)
+
+**驗收標準**：
+- 成功率：10 次中 >= 9 次成功
+- 語音延遲：Push-to-talk 放開到 `/tts` 發布 <= 2.0 秒
+- 視覺更新：FaceDetections >= 10 Hz
+- 可觀測性：Website 事件流看到完整鏈路
+
+### 8.3 Demo B：視覺互動分支 (P1 亮點)
+
+**流程**：
+1. FaceDetections 有 focused_track_id
+2. 手勢/姿勢事件觸發
+3. Brain 觸發 `ExecuteSkill.action`
+4. 回覆 `/tts` + `/state/brain` 更新
+
+**驗收標準**：
+- 成功率：10 次中 >= 7 次成功
+- 延遲：視覺事件到 Skill 開始 <= 1.0 秒
+- 安全：`stop` 必須可打斷其他 skill (最高優先級)
+- 彈性：若手勢不穩，可改姿勢或簡化指向
+
+### 8.4 Demo C：網站同步展示 (產品感)
+
+**流程**：
+1. 使用者 Push-to-talk 或按網站「Demo C」按鈕
+2. Brain 進入 `mode=demo`，逐步更新 `/state/brain`
+3. Website 顯示進度條、狀態轉移、最終輸出
+
+**驗收標準**：
+- 成功率：10 次中 >= 9 次成功
+- 同步延遲：BrainState 更新到 Website 畫面 <= 300 ms
+- 降級保證：拔掉雲端仍可用按鈕完整跑完 Demo C
+
+### 8.5 立即行動清單 (3/7-3/9)
+
+- [ ] **Architect**：宣布介面契約 v1 於 3/9 凍結
+- [ ] **全員**：收到 DELIVERABLE.md 模板後填寫骨架
+- [ ] **鄔**：先把 Website 做出「一鍵 Demo + brain state 監控」
+- [ ] **Architect**：準備 Bring-up 手冊與故障排查第一版
+
+---
+
+## 9. 風險與降級策略
+
+### 9.1 Top 5 風險與對策
+
+| 風險 | 影響 | 對策 | 負責人 | 期限 |
+|------|------|------|--------|------|
+| 網路不穩導致 ASR/LLM 失效 | Demo 中斷 | Mode 2 本地降級 + 一鍵 Demo 按鈕 | Architect + 鄔 | 3/15 |
+| Face track_id 不穩 | 互動混亂 | Brain 短期黏著策略 + 置信度門檻 | 楊 + Architect | 3/12 |
+| 中文語音現場誤識別 | 錯誤回應 | 小詞表 + 關鍵字規則 + 文字輸入替代 | 鄔 | 3/14 |
+| Go2 技能執行不穩 | 動作失敗 | Safety guard (速度上限、超時 stop) | Architect | 3/12 |
+| Website 與 ROS 串接受限 | 無法展示 | web-bridge proxy 備案 + 同網段筆電 | 鄔 + Architect | 3/13 |
+
+### 9.2 網路降級策略 (正式驗收項)
+
+**連線模式分級**：
+
+| 模式 | 名稱 | 說明 |
+|:----:|------|------|
+| Mode 0 | Cloud Full | 預設，ASR/LLM/TTS 走遠端 GPU |
+| Mode 1 | Cloud Limited | 網路抖動，部分回本地規則 |
+| Mode 2 | Local Demo | 無雲端，按鈕 intent + 預錄 TTS |
+| Mode 3 | Playback | 保底，rosbag 回放 |
+
+**P0 必備備援**：
+- Website 一鍵 Demo A/B/C
+- 一鍵技能 (stand/sit/lie/wave/spin/stop)
+- 一鍵切換「Cloud On/Off」
+- Brain 超時保護 (雲端請求超時自動降級)
+- `stop` 最高優先級打斷
+
+### 9.3 介面契約凍結規則
+
+**3/9 凍結內容 (外部契約，不可變更)**：
+- Topic 名稱
+- Message schema
+- Action 名稱
+- Intent enum / Skill enum / State enum
+- 驗收格式
+
+**3/9 後仍可調整 (內部實作)**：
+- 模型種類與權重
+- 閾值與前處理策略
+- 內部 pipeline 實作
+
+---
+
+## 10. 文件導航與延伸閱讀
+
+### 10.1 核心文件地圖
+
+```
+docs/
+├── mission/
+│   ├── README.md          # ← 你正在這裡 (入口頁)
+│   ├── vision.md          # 專案願景 (待撰寫)
+│   └── roadmap.md         # 開發路線圖 (待撰寫)
+│
+├── architecture/
+│   ├── interaction_v1_contract.md  # 介面契約 v1 (凍結)
+│   └── brain_v1.md                 # 大腦架構設計
+│
+├── 人臉辨識/
+│   └── README.md          # 人臉模組詳細設計
+│
+├── 語音功能/
+│   └── README.md          # 語音模組詳細設計
+│
+├── 手勢辨識/
+│   └── README.md          # 手勢/姿勢模組設計
+│
+├── setup/
+│   ├── README.md          # 環境建置總覽
+│   ├── hardware/          # 硬體設置指南
+│   ├── software/          # 軟體安裝指南
+│   └── network/           # 網路配置指南
+│
+└── logs/                  # 開發日誌 (依日期)
+```
+
+### 10.2 快速連結
+
+| 目的 | 連結 |
 |------|------|
-| **MCP** | Model Context Protocol，Anthropic 提出的 LLM 與外部工具通訊標準 |
-| **rosbridge** | ROS2 的 WebSocket 橋接器，讓非 ROS 程式可與 ROS 通訊 |
-| **VLM** | Vision Language Model，視覺語言模型 |
-| **Snapshot** | 定時截圖策略，取代即時影片串流以降低延遲 |
-| **FSM** | Finite State Machine，有限狀態機 |
-| **Nav2** | ROS2 Navigation Stack，導航框架 |
-| **LangGraph** | LangChain 的多代理人協作框架 |
+| **人臉模組設計** | [人臉辨識/README.md](../人臉辨識/README.md) |
+| **語音模組設計** | [語音功能/README.md](../語音功能/README.md) |
+| **介面契約規格** | [interaction_v1_contract.md](../architecture/interaction_v1_contract.md) |
+| **環境建置指南** | [setup/README.md](../setup/README.md) |
+| **前端展示程式** | [face_dashboard_nextjs/README.md](../../face_dashboard_nextjs/README.md) |
+| **後端 API 程式** | [face_dashboard_fastapi/README.md](../../face_dashboard_fastapi/README.md) |
+| **開發日誌** | [logs/README.md](../logs/README.md) |
+
+### 10.3 專案根目錄關鍵路徑
+
+| 路徑 | 內容 |
+|------|------|
+| `go2_robot_sdk/` | Go2 driver + launch + config |
+| `go2_interfaces/` | ROS2 msg/srv/action 定義 |
+| `ros-mcp-server/` | MCP server 實作 |
+| `face_dashboard_fastapi/` | 展示網站後端 |
+| `face_dashboard_nextjs/` | 展示網站前端 |
+| `scripts/` | 測試與開發腳本 |
 
 ---
 
-## VIII. 相關文件
+## 附錄：關鍵決策摘要
 
-- [開發計畫（時程規劃）](./開發計畫.md)
-- [ros-mcp-server 技術研究報告](../../ros-mcp-server/README.md)
-- [Phase 1 執行指南](./docs/01-guides/slam_nav/README.md)
-- [CycloneDDS 配置指南](./docs/archive/2026-02-11-restructure/guides/cyclonedds-config-guide.md)
+| 決策項目 | 選定方案 | 決策理由 |
+|----------|----------|----------|
+| 主線方向 | 多模態人機互動 | 與專案「以跟人的互動為主」一致 |
+| 大腦架構 | Interaction Executive v1 | 先做穩定決策，P1 再追高智商 |
+| 人臉方案 | YuNet + SFace | 輕量、Jetson 可跑、OpenCV 原生支援 |
+| 語音方案 | 雲端優先 + 離線備援 | Qwen ASR/TTS 中文效果最佳 |
+| LLM 路線 | Qwen3.5 放 P1 | 它是雲端腦候選，ASR/TTS 獨立評估 |
+| 喚醒詞 | P0 不做 | Push-to-talk 更穩定，喚醒詞列 P1 |
+| 人臉註冊 | Session 追蹤 | 更快交付，demo 夠用 |
+| 動作範圍 | P0-safe 優先 | 以「穩」為準，不是「酷」 |
+| 網站架構 | 一站雙區 | Showcase + Docs shell |
+| 降級策略 | 正式驗收項 | Cloud On/Off + 本地替代流程 |
 
 ---
 
-**祝專題順利！🐕**
+**這是 4/13 前的 P0/P1 執行架構，不再討論大方向，只討論接口與交付。**
+
+---
+
+*最後更新：2026-03-07*  
+*維護者：System Architect*  
+*狀態：v1.0 定案*

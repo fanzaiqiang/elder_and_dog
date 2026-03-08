@@ -60,14 +60,15 @@ class FaceIdentityNode(Node):
         self.lock = threading.Lock()
         self.headless = not bool(os.environ.get("DISPLAY")) or args.headless
         self.last_log_ts = 0.0
+        self.last_publish_ts = 0.0
         self.shutting_down = False
         self.last_pub_err_ts = 0.0
+        self.publish_period = 1.0 / max(0.1, float(args.publish_fps))
+        self.publish_compare_image = not bool(args.no_publish_compare_image)
 
-        self.candidate_name = "unknown"
-        self.candidate_hits = 0
-        self.last_stable_name = "unknown"
-        self.last_stable_sim = -1.0
-        self.last_known_ts = 0.0
+        self.next_track_id = 1
+        self.tracks = {}
+        self.track_states = {}
 
         self.color = None
         self.depth = None
@@ -128,7 +129,7 @@ class FaceIdentityNode(Node):
 
         self.create_subscription(Image, args.color_topic, self.cb_color, 10)
         self.create_subscription(Image, args.depth_topic, self.cb_depth, 10)
-        self.timer = self.create_timer(0.05, self.tick)
+        self.timer = self.create_timer(args.tick_period, self.tick)
 
         self.get_logger().info(
             f"Identity ready, people={sorted(self.model.get('centroids', {}).keys())}, "
@@ -140,6 +141,92 @@ class FaceIdentityNode(Node):
         if faces is None or len(faces) == 0:
             return None
         return max(faces, key=lambda row: float(row[2] * row[3]))
+
+    @staticmethod
+    def to_bbox(face_row: np.ndarray, img_w: int, img_h: int):
+        x, y, fw, fh = face_row[:4].astype(np.int32)
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(img_w, x + max(1, fw))
+        y2 = min(img_h, y + max(1, fh))
+        if x2 <= x1 or y2 <= y1:
+            return None
+        return (x1, y1, x2, y2)
+
+    @staticmethod
+    def bbox_iou(box_a, box_b):
+        ax1, ay1, ax2, ay2 = box_a
+        bx1, by1, bx2, by2 = box_b
+        inter_x1 = max(ax1, bx1)
+        inter_y1 = max(ay1, by1)
+        inter_x2 = min(ax2, bx2)
+        inter_y2 = min(ay2, by2)
+        inter_w = max(0, inter_x2 - inter_x1)
+        inter_h = max(0, inter_y2 - inter_y1)
+        inter_area = float(inter_w * inter_h)
+        if inter_area <= 0:
+            return 0.0
+        area_a = float((ax2 - ax1) * (ay2 - ay1))
+        area_b = float((bx2 - bx1) * (by2 - by1))
+        denom = area_a + area_b - inter_area
+        if denom <= 1e-8:
+            return 0.0
+        return inter_area / denom
+
+    def get_track_state(self, track_id: int):
+        state = self.track_states.get(track_id)
+        if state is None:
+            state = {
+                "candidate_name": "unknown",
+                "candidate_hits": 0,
+                "last_stable_name": "unknown",
+                "last_stable_sim": -1.0,
+                "last_known_ts": 0.0,
+            }
+            self.track_states[track_id] = state
+        return state
+
+    def assign_tracks(self, detections):
+        assigned = []
+        used_tracks = set()
+
+        for det in detections:
+            bbox = det["bbox"]
+            best_track_id = None
+            best_iou = 0.0
+            for track_id, track in self.tracks.items():
+                if track_id in used_tracks:
+                    continue
+                iou = self.bbox_iou(bbox, track["bbox"])
+                if iou > best_iou:
+                    best_iou = iou
+                    best_track_id = track_id
+
+            if best_track_id is not None and best_iou >= self.args.track_iou_threshold:
+                track_id = best_track_id
+                self.tracks[track_id]["bbox"] = bbox
+                self.tracks[track_id]["misses"] = 0
+            else:
+                track_id = self.next_track_id
+                self.next_track_id += 1
+                self.tracks[track_id] = {"bbox": bbox, "misses": 0}
+
+            used_tracks.add(track_id)
+            assigned.append((track_id, det))
+
+        drop_ids = []
+        for track_id, track in self.tracks.items():
+            if track_id in used_tracks:
+                continue
+            track["misses"] += 1
+            if track["misses"] > self.args.track_max_misses:
+                drop_ids.append(track_id)
+
+        for track_id in drop_ids:
+            self.tracks.pop(track_id, None)
+            self.track_states.pop(track_id, None)
+
+        return assigned
 
     def extract_embedding_from_crop(self, image_bgr: np.ndarray, face_row: np.ndarray):
         aligned = self.recognizer.alignCrop(image_bgr, face_row)
@@ -220,48 +307,61 @@ class FaceIdentityNode(Node):
 
         return best_name, best_sim
 
-    def decide_stable_name(self, raw_name: str, raw_sim: float):
+    def decide_stable_name(self, track_id: int, raw_name: str, raw_sim: float):
+        state = self.get_track_state(track_id)
         now = time.time()
         if raw_sim >= self.args.sim_threshold_upper:
             proposed = raw_name
         elif raw_sim < self.args.sim_threshold_lower:
             proposed = "unknown"
         else:
-            proposed = self.last_stable_name
+            proposed = state["last_stable_name"]
 
-        if proposed == self.candidate_name:
-            self.candidate_hits += 1
+        if proposed == state["candidate_name"]:
+            state["candidate_hits"] += 1
         else:
-            self.candidate_name = proposed
-            self.candidate_hits = 1
+            state["candidate_name"] = proposed
+            state["candidate_hits"] = 1
 
-        if self.candidate_hits >= self.args.stable_hits:
-            self.last_stable_name = self.candidate_name
-            self.last_stable_sim = raw_sim
-            if self.last_stable_name != "unknown":
-                self.last_known_ts = now
+        if state["candidate_hits"] >= self.args.stable_hits:
+            state["last_stable_name"] = state["candidate_name"]
+            state["last_stable_sim"] = raw_sim
+            if state["last_stable_name"] != "unknown":
+                state["last_known_ts"] = now
 
         if (
-            self.last_stable_name != "unknown"
+            state["last_stable_name"] != "unknown"
             and proposed == "unknown"
-            and (now - self.last_known_ts) < self.args.unknown_grace_s
+            and (now - state["last_known_ts"]) < self.args.unknown_grace_s
         ):
-            return self.last_stable_name, max(raw_sim, self.last_stable_sim), "hold"
+            return (
+                state["last_stable_name"],
+                max(raw_sim, state["last_stable_sim"]),
+                "hold",
+            )
 
-        return self.last_stable_name, max(raw_sim, self.last_stable_sim), "stable"
+        return (
+            state["last_stable_name"],
+            max(raw_sim, state["last_stable_sim"]),
+            "stable",
+        )
 
-    def safe_publish(self, debug_img: np.ndarray, compare_img: np.ndarray):
+    def safe_publish(self, debug_img: np.ndarray, compare_img: np.ndarray | None):
         if self.shutting_down or not rclpy.ok():
+            return
+        now = time.time()
+        if now - self.last_publish_ts < self.publish_period:
             return
         try:
             self.debug_image_pub.publish(
                 self.bridge.cv2_to_imgmsg(debug_img, encoding="bgr8")
             )
-            self.compare_image_pub.publish(
-                self.bridge.cv2_to_imgmsg(compare_img, encoding="bgr8")
-            )
+            if self.publish_compare_image and compare_img is not None:
+                self.compare_image_pub.publish(
+                    self.bridge.cv2_to_imgmsg(compare_img, encoding="bgr8")
+                )
+            self.last_publish_ts = now
         except Exception as exc:  # noqa: BLE001
-            now = time.time()
             if now - self.last_pub_err_ts >= 1.0:
                 self.get_logger().warn(f"publish skipped: {exc}")
                 self.last_pub_err_ts = now
@@ -283,59 +383,83 @@ class FaceIdentityNode(Node):
         h, w = color.shape[:2]
         self.detector.setInputSize((w, h))
         _, faces = self.detector.detect(color)
-        face = self.pick_largest_face(faces)
 
-        lines = []
-        if face is not None:
-            x, y, fw, fh = face[:4].astype(np.int32)
-            x = max(0, x)
-            y = max(0, y)
-            x2 = min(w, x + max(1, fw))
-            y2 = min(h, y + max(1, fh))
+        detections = []
+        if faces is not None and len(faces) > 0:
+            face_rows = sorted(
+                faces,
+                key=lambda row: float(row[2] * row[3]),
+                reverse=True,
+            )
+            if self.args.max_faces > 0:
+                face_rows = face_rows[: self.args.max_faces]
 
             frame_area = float(color.shape[0] * color.shape[1])
-            if ((x2 - x) * (y2 - y)) / frame_area >= self.args.min_face_area_ratio:
-                emb = self.extract_embedding_from_crop(color, face)
-                if emb is not None:
-                    raw_name, raw_sim = self.predict_name(emb)
-                    name, sim, mode = self.decide_stable_name(raw_name, raw_sim)
+            for face_row in face_rows:
+                bbox = self.to_bbox(face_row, w, h)
+                if bbox is None:
+                    continue
+                x1, y1, x2, y2 = bbox
+                if ((x2 - x1) * (y2 - y1)) / frame_area < self.args.min_face_area_ratio:
+                    continue
+                detections.append({"face_row": face_row, "bbox": bbox})
 
-                    dist_txt = "N/A"
-                    if depth is not None:
-                        roi = depth[y:y2, x:x2]
-                        valid = roi[(roi > 0) & (roi < 10000)]
-                        if valid.size:
-                            dist_txt = (
-                                f"{float(np.median(valid)) * self.depth_scale:.2f}m"
-                            )
+        tracked_faces = self.assign_tracks(detections)
+        face_count = len(tracked_faces)
 
-                    label = f"{name} sim={sim:.2f} d={dist_txt} {mode}"
-                    lines.append(label)
+        lines = []
+        for track_id, det in tracked_faces:
+            face_row = det["face_row"]
+            x1, y1, x2, y2 = det["bbox"]
 
-                    color_box = (0, 255, 0) if name != "unknown" else (0, 0, 255)
-                    cv2.rectangle(color, (x, y), (x2, y2), color_box, 2)
-                    cv2.putText(
-                        color,
-                        label,
-                        (x, max(20, y - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.55,
-                        color_box,
-                        2,
-                    )
+            name = "unknown"
+            sim = 0.0
+            mode = "stable"
+            emb = self.extract_embedding_from_crop(color, face_row)
+            if emb is not None:
+                raw_name, raw_sim = self.predict_name(emb)
+                name, sim, mode = self.decide_stable_name(track_id, raw_name, raw_sim)
 
-        compare = cv2.hconcat([raw, color])
+            dist_txt = "N/A"
+            if depth is not None:
+                roi = depth[y1:y2, x1:x2]
+                valid = roi[(roi > 0) & (roi < 10000)]
+                if valid.size:
+                    dist_txt = f"{float(np.median(valid)) * self.depth_scale:.2f}m"
+
+            label = f"id={track_id} {name} sim={sim:.2f} d={dist_txt} {mode}"
+            lines.append(label)
+
+            color_box = (0, 255, 0) if name != "unknown" else (0, 0, 255)
+            cv2.rectangle(color, (x1, y1), (x2, y2), color_box, 2)
+            cv2.putText(
+                color,
+                label,
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color_box,
+                2,
+            )
+
+        compare = None
+        if self.publish_compare_image:
+            compare = cv2.hconcat([raw, color])
         self.safe_publish(color, compare)
 
         if self.headless:
             now = time.time()
             if now - self.last_log_ts >= 1.0:
                 if len(lines) == 0:
-                    self.get_logger().info("face_count=0")
+                    self.get_logger().info(f"face_count={face_count}")
                 else:
-                    self.get_logger().info(" | ".join(lines))
-                cv2.imwrite("/tmp/face_identity_debug.jpg", color)
-                cv2.imwrite("/tmp/face_identity_compare.jpg", compare)
+                    self.get_logger().info(
+                        f"face_count={face_count} | " + " | ".join(lines)
+                    )
+                if self.args.save_debug_jpeg:
+                    cv2.imwrite("/tmp/face_identity_debug.jpg", color)
+                    if compare is not None:
+                        cv2.imwrite("/tmp/face_identity_compare.jpg", compare)
                 self.last_log_ts = now
             return
 
@@ -365,6 +489,13 @@ def parse_args():
     p.add_argument("--stable-hits", type=int, default=3)
     p.add_argument("--unknown-grace-s", type=float, default=1.2)
     p.add_argument("--min-face-area-ratio", type=float, default=0.02)
+    p.add_argument("--max-faces", type=int, default=5)
+    p.add_argument("--track-iou-threshold", type=float, default=0.3)
+    p.add_argument("--track-max-misses", type=int, default=10)
+    p.add_argument("--publish-fps", type=float, default=8.0)
+    p.add_argument("--tick-period", type=float, default=0.05)
+    p.add_argument("--no-publish-compare-image", action="store_true")
+    p.add_argument("--save-debug-jpeg", action="store_true")
     p.add_argument("--color-topic", default="/camera/camera/color/image_raw")
     p.add_argument(
         "--depth-topic", default="/camera/camera/aligned_depth_to_color/image_raw"

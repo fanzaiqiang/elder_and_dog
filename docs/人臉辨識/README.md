@@ -329,6 +329,98 @@ python3 /home/jetson/elder_and_dog/scripts/face_enroll_web.py --port 8090
 - Next.js 前端補健康燈與明確 toast（start/stop 成功/失敗回饋）。
 - 多人辨識參數建立「場景 preset」並固化預設值。
 
+### 今日進度整理（2026-03-08 晚間）
+
+已完成（YuNet + SFace baseline 強化）：
+
+- `scripts/face_identity_infer_cv.py` 已由「單一最大臉」改為「多臉處理 + track_id」。
+- 身份穩定化由全域單一狀態改為 per-track 狀態（每張臉各自穩定）。
+- 新增低延遲參數：
+  - `--max-faces`
+  - `--track-iou-threshold`
+  - `--track-max-misses`
+  - `--publish-fps`
+  - `--no-publish-compare-image`
+  - `--save-debug-jpeg`
+  - `--tick-period`
+- 發布鏈路可降載：預設可只發 `/face_identity/debug_image`，避免 `compare_image`（左右拼接）造成高頻寬壓力。
+
+本次實測重點：
+
+- 「只能辨識一人」根因是程式邏輯（舊版只取 `pick_largest_face`），非模型本身限制。
+- 「分鐘級延遲」主要是流程重複啟動 + 高頻大圖 topic 積壓；曾觀察到多個 `realsense2_camera_node` 與多個 `face_identity_infer_cv.py` 同時運行。
+- Jetson 上需嚴格保持單一流程：`1x camera + 1x infer + 1x foxglove_bridge`。
+
+建議啟動方式（Jetson，bash）：
+
+```bash
+bash
+unset COLCON_CURRENT_PREFIX COLCON_PREFIX_PATH AMENT_PREFIX_PATH CMAKE_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+
+# 清場（避免重複流程導致延遲）
+pkill -f face_identity_infer_cv.py || true
+pkill -f realsense2_camera_node || true
+pkill -f "ros2 launch realsense2_camera rs_launch.py" || true
+pkill -f foxglove_bridge || true
+pkill -f "ros2 launch foxglove_bridge foxglove_bridge_launch.xml" || true
+```
+
+```bash
+# Terminal 1: camera
+bash
+unset COLCON_CURRENT_PREFIX COLCON_PREFIX_PATH AMENT_PREFIX_PATH CMAKE_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  depth_module.profile:=640x360x15 \
+  rgb_camera.profile:=640x360x15 \
+  align_depth.enable:=true
+```
+
+```bash
+# Terminal 2: multi-face infer (YuNet + SFace)
+bash
+unset COLCON_CURRENT_PREFIX COLCON_PREFIX_PATH AMENT_PREFIX_PATH CMAKE_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+python3 /home/jetson/elder_and_dog/scripts/face_identity_infer_cv.py \
+  --db-dir /home/jetson/face_db \
+  --model-path /home/jetson/face_db/model_sface.pkl \
+  --yunet-model /home/jetson/face_models/face_detection_yunet_legacy.onnx \
+  --sface-model /home/jetson/face_models/face_recognition_sface_2021dec.onnx \
+  --det-score-threshold 0.35 \
+  --min-face-area-ratio 0.001 \
+  --max-faces 5 \
+  --publish-fps 8 \
+  --no-publish-compare-image \
+  --headless
+```
+
+```bash
+# Terminal 3: Foxglove bridge
+bash
+unset COLCON_CURRENT_PREFIX COLCON_PREFIX_PATH AMENT_PREFIX_PATH CMAKE_PREFIX_PATH
+source /opt/ros/humble/setup.bash
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+```
+
+Foxglove 面板建議：
+
+- 先只開一個 `Image` 面板看 `/face_identity/debug_image`。
+- 不要同時開多個 raw/depth/compare 面板，避免客戶端解碼與網路壓力造成額外延遲。
+- 若畫面黑屏且顯示 Calibration 錯誤，請清空 Image panel 的 `Calibration` 欄位並關閉 `Rectify`。
+
+驗收指標（建議）：
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 topic hz /face_identity/debug_image
+ros2 topic bw /face_identity/debug_image
+ps -eo pid,pcpu,pmem,cmd --sort=-pcpu | head -n 12
+```
+
+- 目標：雙人同框可同時出框（含 `id=<track_id>` 標籤）。
+- 目標：Foxglove 延遲降至秒級內（理想 < 500 ms）。
+
 
 ### Step 1 - 邊緣端先做「人臉偵測 + 追蹤」
 

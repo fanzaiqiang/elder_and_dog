@@ -10,6 +10,55 @@
 
 ---
 
+## 今天先從這裡開始（MVP 起手）
+
+先不要一次做完整 ASR+LLM+TTS。依照目前 repo 真實狀態，先把「TTS 鏈路可用」打通，因為 `speech_processor` 現在穩定存在的是 `tts_node`。
+
+### 目前程式現況（已存在）
+
+- 語音文件主檔：`docs/語音功能/README.md`
+- TTS node：`speech_processor/speech_processor/tts_node.py`
+- 套件 entrypoint：`speech_processor/setup.py`
+- Go2 launch 內可開關 TTS：`go2_robot_sdk/launch/robot.launch.py`（`enable_tts`）
+
+### Phase 1（今天必做）: 先驗證 TTS 端到端
+
+1. 在 Jetson build 指定套件
+
+```bash
+ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.bash && colcon build --packages-select speech_processor go2_robot_sdk"
+```
+
+2. 啟動 Go2（先關掉不需要的模組，只開 TTS）
+
+```bash
+ssh jetson-nano "cd /home/jetson/elder_and_dog && unset COLCON_CURRENT_PREFIX && source /opt/ros/humble/setup.bash && source install/setup.bash && export ROBOT_IP=<GO2_IP> && export CONN_TYPE=webrtc && export ELEVENLABS_API_KEY=<YOUR_KEY> && ros2 launch go2_robot_sdk robot.launch.py enable_tts:=true nav2:=false slam:=false rviz2:=false foxglove:=false"
+```
+
+3. 另一個終端送測試句
+
+```bash
+ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.bash && source install/setup.bash && ros2 topic pub --once /tts std_msgs/msg/String '{data: \"哈囉，語音模組測試成功\"}'"
+```
+
+4. 驗收（至少滿足兩項）
+
+- `tts_node` log 出現 `TTS completed successfully`
+- Go2 有實際播音
+- `/webrtc_req` 有音訊分塊封包送出
+
+### Phase 2（明天接）: 補齊 STT/Intent 最小閉環
+
+目前 source tree 沒有 `speech_processor/speech_processor/stt_intent_node.py`，但 `speech_processor/setup.py` 已宣告 entrypoint `stt_intent_node`。下一步先補這個檔案，做最小版本：
+
+- 訂閱音訊或文字輸入
+- 輸出固定 intent topic（先做 3-5 個指令）
+- 接到 intent 後轉發 `/tts` 做回覆
+
+這樣可先形成「聽到（簡化）-> 理解（規則）-> 說話」的可展示閉環。
+
+---
+
 ## 邊緣端 (Jetson 8GB) - 前端處理
 
 ### VAD (語音活動檢測)

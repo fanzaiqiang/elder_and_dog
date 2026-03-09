@@ -22,6 +22,16 @@
 5. LLM 能在 Jetson 上完成簡短回覆生成並接上 TTS
 6. 端到端流程延遲控制在展示可接受範圍內
 
+### 1.1 Phase 0（今日凍結項）
+
+本輪先凍結三件事，作為後續 Phase 1-6 的唯一基準：
+
+- 主用事件 topic：`/event/speech_intent_recognized`
+- `session_id` 串流規範：VAD -> ASR -> Intent -> TTS 全鏈路可追蹤
+- Foxglove 觀測策略：只看低頻關鍵 topic，先不開高流量影像/點雲
+
+> 若實作與本節不一致，先回到本節修正契約，再進行下一個 Phase。
+
 ---
 
 ## 2. 系統總覽
@@ -131,6 +141,43 @@
 | `/event/speech_intent` | 語音意圖事件（契約版） | 若模組統一後採用，本文件同步更新 |
 
 > **整合注意**：測試時若發現程式實際發布 topic 與上表不一致，應以「程式實際行為」為準，並記錄於測試報告備註欄。
+
+### 3.5 `session_id` 串流契約（Phase 0 凍結）
+
+為了讓單輪語音請求在 Foxglove 與測試報告可追蹤，定義以下規則：
+
+- 一次語音互動（從 `speech_start` 到 TTS 完成）只使用一個 `session_id`
+- 同一輪中的 ASR、Intent、TTS 狀態都必須帶上相同 `session_id`
+- 若某節點無法在 payload 直接帶欄位，至少要在 log 帶出 `session_id`（含時間戳）
+- `session_id` 建議格式：`sp-YYYYMMDD-HHMMSS-<4hex>`，例如 `sp-20260309-164530-a1f9`
+
+建議串流對照：
+
+| 階段 | 建議 topic | 最低要求 |
+|------|------------|----------|
+| VAD | `/state/interaction/speech` | `speech_start/speech_end` 可對應同一輪 |
+| ASR | `/asr_result` | 可對應本輪 `session_id` |
+| Intent | `/intent`、`/event/speech_intent_recognized` | 可對應本輪 `session_id` |
+| TTS | `/tts`、`/webrtc_req` | 可對應本輪 `session_id` 或同時序關聯 |
+
+### 3.6 Foxglove 觀測範圍（Phase 0 凍結）
+
+Foxglove 在開發期用於觀測，不納入主流程依賴。為避免 Jetson 資源抖動，先凍結以下規則：
+
+- 只觀測低頻關鍵 topic：`/state/interaction/speech`、`/asr_result`、`/intent`、`/event/speech_intent_recognized`、`/tts`
+- 不在語音測試同時監看高流量 topic：影像（`/camera/*`）、點雲（`/point_cloud*`）
+- 開發/除錯可 `foxglove:=true`；Demo 基線預設 `foxglove:=false`
+- 若出現延遲飆升或掉訊，第一優先動作是關閉 Foxglove 或縮減觀測 topic
+
+建議最小面板：
+
+| 面板 | Topic | 用途 |
+|------|-------|------|
+| Raw Messages | `/state/interaction/speech` | 看 VAD 狀態流轉 |
+| Raw Messages | `/asr_result` | 看轉寫結果與時間差 |
+| Raw Messages | `/event/speech_intent_recognized` | 看意圖事件是否發布 |
+| Raw Messages | `/tts` | 看回覆是否進入語音輸出 |
+| Raw Messages | `/webrtc_req` | 看 Go2 播放請求是否送出 |
 
 ---
 
@@ -315,6 +362,52 @@ ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.b
 - 檢查錄音採樣率是否為 16kHz mono
 - 若過度敏感，調整 VAD threshold 或最小語音長度
 - 若完全無法觸發，先確認 ALSA 音源是否真的有輸入
+
+### 6.8 2026-03-09 實測補充（Jetson + USB MIC V1）
+
+本日實測已確認 Phase 1 可跑通，關鍵問題與解法如下。
+
+#### 問題與根因
+
+| 問題 | 根因 | 解法 |
+|------|------|------|
+| `ros2` 指令不存在 | 在 `zsh` 使用 `.bash` 環境腳本，導致 ROS 環境未正確載入 | 使用 `setup.zsh` 而非 `setup.bash` |
+| VAD 無事件觸發 | `sounddevice` default 裝置不是 USB 麥克風 | 明確指定 `input_device:=0`（USB MIC V1） |
+| 麥克風 44.1k 與 VAD 16k 不相容 | Silero VAD 僅支援 8k/16k | 在 `vad_node` 內做即時重取樣（44100 -> 16000） |
+
+#### 實測可用啟動方式（baseline）
+
+```bash
+source /opt/ros/humble/setup.zsh
+source /home/jetson/elder_and_dog/install/setup.zsh
+ros2 run speech_processor vad_node --ros-args \
+  -p input_device:=0 \
+  -p sample_rate:=16000 \
+  -p capture_sample_rate:=44100 \
+  -p frame_samples:=512 \
+  -p vad_threshold:=0.25 \
+  -p min_silence_ms:=150
+```
+
+#### 驗收結果（已確認）
+
+- `/event/speech_activity` 持續出現成對的 `speech_start` / `speech_end`
+- 每輪事件都有 `session_id`（可追蹤單輪互動）
+- `/state/interaction/speech` 狀態流正常更新
+
+#### 裝置檢查指令（必要時）
+
+```bash
+python3 - <<'PY'
+import sounddevice as sd
+print("default:", sd.default.device)
+for i, d in enumerate(sd.query_devices()):
+    if d['max_input_channels'] > 0:
+        print(i, d['name'], "default_sr=", d['default_samplerate'])
+PY
+```
+
+> 若 `default` 不是 USB 麥克風，務必在啟動參數指定 `input_device`。
 
 ---
 

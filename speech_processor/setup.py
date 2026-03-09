@@ -13,12 +13,14 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
-        ("share/" + package_name, ["DELIVERABLE.md"]),
     ],
     install_requires=[
         "setuptools",
         "requests",
         "pydub",
+        "numpy",
+        "sounddevice",
+        "silero-vad",
     ],
     zip_safe=True,
     maintainer="Nuralem Abizov",
@@ -28,6 +30,7 @@ setup(
     entry_points={
         "console_scripts": [
             "tts_node = speech_processor.tts_node:main",
+            "vad_node = speech_processor.vad_node:main",
             "stt_intent_node = speech_processor.stt_intent_node:main",
         ],
     },

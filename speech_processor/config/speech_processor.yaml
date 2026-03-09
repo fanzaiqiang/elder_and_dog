@@ -1,0 +1,49 @@
+stt_intent_node:
+  ros__parameters:
+    sample_rate: 16000
+    capture_sample_rate: 16000
+    frame_samples: 512
+    channels: 1
+    input_device: -1
+    alsa_device: ""
+
+    vad_event_topic: "/event/speech_activity"
+    state_topic: "/state/interaction/speech"
+    intent_event_topic: "/event/speech_intent_recognized"
+    intent_topic: "/intent"
+    asr_result_topic: "/asr_result"
+    text_input_topic: "/speech/text_input"
+
+    max_record_seconds: 6.0
+    speech_end_grace_ms: 250
+    pre_roll_ms: 300
+    state_publish_hz: 5.0
+    language: "zh"
+    provider_order: ["qwen_cloud", "whisper_local"]
+
+    qwen_asr.base_url: "http://127.0.0.1:8001/v1/audio/transcriptions"
+    qwen_asr.api_key: ""
+    qwen_asr.timeout_sec: 2.0
+    qwen_asr.model_name: "qwen-asr"
+    qwen_asr.response_text_field: "text"
+
+    whisper_local.model_name: "tiny"
+    whisper_local.timeout_sec: 4.0
+    whisper_local.device: "cpu"
+    whisper_local.compute_type: "int8"
+    whisper_local.cpu_threads: 4
+
+vad_node:
+  ros__parameters:
+    sample_rate: 16000
+    capture_sample_rate: 16000
+    frame_samples: 512
+    channels: 1
+    input_device: -1
+    alsa_device: ""
+    vad_threshold: 0.5
+    min_silence_ms: 400
+    speech_pad_ms: 120
+    state_publish_hz: 5.0
+    state_topic: "/state/interaction/speech"
+    event_topic: "/event/speech_activity"

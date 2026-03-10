@@ -891,6 +891,145 @@ ros2 topic pub --once /tts std_msgs/msg/String '{data: "哈囉，Go2，請播放
 - 若仍無聲，先以 ElevenLabs 保底 demo，再平行調 Piper 音量/裝置
 - 完成後補充 15.1 測試紀錄表（Phase 4 與 End-to-End）
 
+### 9.10 2026-03-11 凌晨補充（無聲音問題當日紀錄）
+
+本輪已完成並行調查（explore/librarian/oracle/Sisyphus-Junior）與 Jetson 現場重現；結論是：
+
+- ROS 指令鏈路目前可重現送出 `4004 -> 4001 -> 4003... -> 4002`
+- 但現場仍可能「封包正常、實體無聲」，代表還需再做 robot 端播放狀態鑑別
+
+#### 今天踩到的坑（已確認）
+
+1. **tmux 腳本內 PATH 展開錯誤，造成 `tts_node` 偶發未啟動**
+   - 症狀：pane 顯示 `ros2: command not found` 或 pane dead。
+   - 根因：腳本裡 `export PATH="$HOME/.local/bin:$PATH"` 在外層先展開，破壞內層 shell。
+   - 修正：改為 `export PATH="$HOME/.local/bin:\$PATH"`。
+
+2. **Jetson 程式碼已更新但未重 build，導致新參數看不到**
+   - 症狀：`ros2 param list /tts_node` 沒有 `robot_volume`。
+   - 修正：`colcon build --packages-select speech_processor` 後重啟 session。
+
+3. **多套 tmux/session 同時存在，造成 topic 計數與行為混淆**
+   - 症狀：`/tts`、`/webrtc_req` publisher/subscriber 數量異常。
+   - 修正：先 kill 舊 session 與舊 process，再只保留一套 `asr-tts-no-vad`。
+
+4. **遠端 SSH 非互動終端，`tmux attach` 會出現 `open terminal failed`**
+   - 說明：此訊息不等於流程失敗；需用 `tmux list-sessions`、`tmux capture-pane` 驗證。
+
+5. **麥克風裝置與取樣率不一致，導致 ASR/VAD 不穩或空字串**
+   - 典型症狀：
+     - PortAudio 錯誤 `-9985`（device unavailable）
+     - PortAudio 錯誤 `-9997`（invalid sample rate）
+     - `stt_intent_node` 出現 `whisper_local: empty transcript`
+   - 根因：
+     - `input_device=-1`（default）在換 USB 麥克風後可能漂移到錯誤裝置
+     - `sample_rate` 與裝置原生 rate 不一致（例如 node 用 16k，但裝置只穩定在 44.1k）
+   - 實務修正：
+     - 先固定 `capture_sample_rate=44100`，由 node 內做重採樣到 `sample_rate=16000`
+    - 必要時改用具體 `input_device` index，不依賴 default
+    - 若當天先求可展示，先走「無 VAD 路徑」避免 VAD 邊界切段干擾
+
+6. **`stt_intent_node` 參數名誤用會直接失效**
+   - 正確參數：`provider_order`
+   - 常見誤用：`asr_provider_order`（不會被節點吃到）
+
+7. **zsh 對 `[]` 的 glob 會炸掉 provider 陣列參數**
+   - 典型錯誤寫法：`-p provider_order:=[whisper_local]`
+   - 建議寫法：`-p provider_order:='["whisper_local"]'`
+   - 或在啟動前加：`setopt nonomatch`
+
+8. **空參數覆寫會把預設值清掉，造成 crash 或異常行為**
+   - 高風險例子：`-p api_key:=`、`-p alsa_device:=`
+   - 原則：不要傳遞空值；需要可選參數時，應在腳本中條件組裝參數字串。
+
+9. **`setup.bash` / `setup.zsh` 混用容易造成環境不完整**
+   - 現象：同一套指令在不同 shell 結果不一致（找不到 command 或 package）。
+   - 原則：bash 就全程 `setup.bash`，zsh 就全程 `setup.zsh`，不要混搭。
+
+10. **多流程混跑會讓診斷信號失真**
+   - 典型衝突：`speech-e2e`、`speech-e2e-noenv`、`asr-tts-no-vad` 同時跑。
+   - 影響：topic publisher/subscriber 計數失真，容易誤判「有送出/有訂閱」。
+   - 原則：同時間只保留一條測試路徑，其他 session 全部關閉。
+
+#### 麥克風排查最短指令（明天可直接用）
+
+```bash
+# 1) 看 ALSA 硬體清單（卡號/裝置號）
+arecord -l
+
+# 2) 看可用 PCM 名稱（含 plughw）
+arecord -L | head -n 40
+
+# 3) 直接錄 3 秒驗證麥克風是否有波形
+arecord -D plughw:0,0 -f S16_LE -r 16000 -c 1 -d 3 /tmp/mic_test.wav
+aplay /tmp/mic_test.wav
+
+# 4) 若 default 不穩，改成明確裝置 index 啟動 stt_intent_node
+source /opt/ros/humble/setup.zsh
+source /home/jetson/elder_and_dog/install/setup.zsh
+ros2 run speech_processor stt_intent_node --ros-args \
+  -p provider_order:='["whisper_local"]' \
+  -p input_device:=<你的裝置index> \
+  -p sample_rate:=16000 \
+  -p capture_sample_rate:=44100
+```
+
+> 註：`<你的裝置index>` 建議先用 Python/sounddevice 或 node 啟動 log 確認，不要盲猜。
+
+#### 今日已驗證可重現設定（明天從這裡接）
+
+- 啟動腳本：`scripts/start_asr_tts_no_vad_tmux.sh`
+- 關鍵 TTS 參數：
+  - `provider=piper`
+  - `robot_chunk_interval_sec=0.06`
+  - `robot_playback_tail_sec=0.5`
+  - `robot_volume=80`
+- 觀察到的 `webrtc_req` 序列：
+  - `api_id=4004`（volume）
+  - `api_id=4001`（start）
+  - `api_id=4003`（多 chunk）
+  - `api_id=4002`（stop）
+
+#### 明天接續的單一路徑（避免再分叉）
+
+1. **先固定單一路徑重現（只跑一套）**
+
+```bash
+tmux kill-session -t speech-e2e 2>/dev/null || true
+tmux kill-session -t speech-e2e-noenv 2>/dev/null || true
+tmux kill-session -t speech-phase4 2>/dev/null || true
+tmux kill-session -t asr-tts-no-vad 2>/dev/null || true
+
+pkill -f go2_driver_node 2>/dev/null || true
+pkill -f stt_intent_node 2>/dev/null || true
+pkill -f intent_tts_bridge_node 2>/dev/null || true
+pkill -f tts_node 2>/dev/null || true
+
+cd /home/jetson/elder_and_dog
+source /opt/ros/humble/setup.bash
+colcon build --packages-select speech_processor
+./scripts/start_asr_tts_no_vad_tmux.sh
+```
+
+2. **用最小測試句驗證命令有送到 audiohub**
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/jetson/elder_and_dog/install/setup.bash
+
+{ (sleep 2; ros2 topic pub --once /tts std_msgs/msg/String "data: tomorrow_probe") \
+  & timeout 12s ros2 topic echo /webrtc_req; }
+```
+
+3. **若仍無聲，直接做「ROS 路徑 vs 直送路徑」二分鑑別**
+   - Oracle 建議：同一份短音訊、同一台 Jetson，先做 ROS 路徑，再做直送 robot audiohub，快速切分是 ROS chunk/時序問題或 robot 端播放狀態問題。
+
+4. **驗收口徑（避免主觀）**
+   - 至少要同時滿足：
+     - `/webrtc_req` 出現 `4004 -> 4001 -> 4003... -> 4002`
+     - 現場聽到實體播音
+   - 若只有第一項成立，不可宣告完成。
+
 ### 9.3.3 Piper 測試（本地低延遲模式）
 
 若要測本地 Piper（降低雲端往返延遲）：

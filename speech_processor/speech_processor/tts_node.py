@@ -36,6 +36,38 @@ from std_msgs.msg import String
 from go2_interfaces.msg import WebRtcReq
 
 
+def _env_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    return value if value is not None else default
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class AudioFormat(Enum):
     """Supported audio formats"""
 
@@ -66,6 +98,9 @@ class TTSConfig:
     use_cache: bool = True
     cache_dir: str = "tts_cache"
     chunk_size: int = 16 * 1024
+    robot_chunk_interval_sec: float = 0.02
+    robot_playback_tail_sec: float = 0.2
+    robot_volume: int = 80
     audio_quality: str = "standard"  # standard, high
     language: str = "en"
 
@@ -429,29 +464,40 @@ class EnhancedTTSNode(Node):
 
     def _declare_parameters(self) -> None:
         """Declare all node parameters"""
-        self.declare_parameter("api_key", "")
-        self.declare_parameter("provider", "elevenlabs")
-        self.declare_parameter("voice_name", "XrExE9yKIg1WjnnlVkGX")
+        self.declare_parameter(
+            "api_key", _env_str("TTS_API_KEY", _env_str("ELEVENLABS_API_KEY", ""))
+        )
+        self.declare_parameter("provider", _env_str("TTS_PROVIDER", "elevenlabs"))
+        self.declare_parameter(
+            "voice_name", _env_str("TTS_VOICE_NAME", "XrExE9yKIg1WjnnlVkGX")
+        )
         self.declare_parameter("local_playback", False)
         self.declare_parameter("use_cache", True)
         self.declare_parameter("cache_dir", "tts_cache")
         self.declare_parameter("chunk_size", 16384)
+        self.declare_parameter("robot_chunk_interval_sec", 0.02)
+        self.declare_parameter("robot_playback_tail_sec", 0.2)
+        self.declare_parameter("robot_volume", 80)
         self.declare_parameter("audio_quality", "standard")
         self.declare_parameter("language", "en")
         self.declare_parameter("stability", 0.5)
         self.declare_parameter("similarity_boost", 0.5)
         self.declare_parameter("model_id", "eleven_turbo_v2_5")
-        self.declare_parameter("melo_language", "ZH")
-        self.declare_parameter("melo_speaker", "ZH")
-        self.declare_parameter("melo_speed", 1.0)
-        self.declare_parameter("melo_device", "auto")
-        self.declare_parameter("piper_model_path", "")
-        self.declare_parameter("piper_config_path", "")
-        self.declare_parameter("piper_speaker_id", 0)
-        self.declare_parameter("piper_length_scale", 1.0)
-        self.declare_parameter("piper_noise_scale", 0.667)
-        self.declare_parameter("piper_noise_w", 0.8)
-        self.declare_parameter("piper_use_cuda", False)
+        self.declare_parameter("melo_language", _env_str("MELO_LANGUAGE", "ZH"))
+        self.declare_parameter("melo_speaker", _env_str("MELO_SPEAKER", "ZH"))
+        self.declare_parameter("melo_speed", _env_float("MELO_SPEED", 1.0))
+        self.declare_parameter("melo_device", _env_str("MELO_DEVICE", "auto"))
+        self.declare_parameter("piper_model_path", _env_str("PIPER_MODEL_PATH", ""))
+        self.declare_parameter("piper_config_path", _env_str("PIPER_CONFIG_PATH", ""))
+        self.declare_parameter("piper_speaker_id", _env_int("PIPER_SPEAKER_ID", 0))
+        self.declare_parameter(
+            "piper_length_scale", _env_float("PIPER_LENGTH_SCALE", 1.0)
+        )
+        self.declare_parameter(
+            "piper_noise_scale", _env_float("PIPER_NOISE_SCALE", 0.667)
+        )
+        self.declare_parameter("piper_noise_w", _env_float("PIPER_NOISE_W", 0.8))
+        self.declare_parameter("piper_use_cuda", _env_bool("PIPER_USE_CUDA", False))
 
     def _load_configuration(self) -> TTSConfig:
         """Load configuration from parameters"""
@@ -475,6 +521,15 @@ class EnhancedTTSNode(Node):
             .get_parameter_value()
             .string_value,
             chunk_size=self.get_parameter("chunk_size")
+            .get_parameter_value()
+            .integer_value,
+            robot_chunk_interval_sec=self.get_parameter("robot_chunk_interval_sec")
+            .get_parameter_value()
+            .double_value,
+            robot_playback_tail_sec=self.get_parameter("robot_playback_tail_sec")
+            .get_parameter_value()
+            .double_value,
+            robot_volume=self.get_parameter("robot_volume")
             .get_parameter_value()
             .integer_value,
             audio_quality=self.get_parameter("audio_quality")
@@ -639,6 +694,10 @@ class EnhancedTTSNode(Node):
                 f"📤 Sending audio to robot: {total_chunks} chunks, {duration:.1f}s duration"
             )
 
+            volume = int(max(0, min(100, self.config.robot_volume)))
+            self._send_audio_command(4004, str(volume))
+            time.sleep(0.05)
+
             # Send start command
             self._send_audio_command(4001, "")
             time.sleep(0.1)
@@ -655,13 +714,13 @@ class EnhancedTTSNode(Node):
                 if chunk_idx % 10 == 0:  # Log progress every 10 chunks
                     self.get_logger().info(f"📤 Sent {chunk_idx}/{total_chunks} chunks")
 
-                time.sleep(0.15)  # Prevent flooding
+                time.sleep(max(0.0, self.config.robot_chunk_interval_sec))
 
             # Wait for playback to complete
             self.get_logger().info(
                 f"⏳ Waiting for playback completion ({duration:.1f}s)..."
             )
-            time.sleep(duration + 1.0)
+            time.sleep(max(0.0, duration + self.config.robot_playback_tail_sec))
 
             # Send end command
             self._send_audio_command(4002, "")

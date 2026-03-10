@@ -7,6 +7,7 @@ import json
 import importlib
 import queue
 import base64
+import time
 from datetime import datetime
 from secrets import token_hex
 from typing import Any, Optional
@@ -82,6 +83,7 @@ class VadNode(Node):
         self._sd: Optional[Any] = None
         self._torch: Optional[Any] = None
         self._active_capture_rate = self.sample_rate
+        self._last_level_log_ts = 0.0
 
         self._load_dependencies()
         self._start_audio_stream()
@@ -162,9 +164,10 @@ class VadNode(Node):
             "callback": self._audio_callback,
         }
 
-        # Use default device (respects ALSA_DEFAULT env var)
+        if self.alsa_device:
+            stream_kwargs["device"] = self.alsa_device
         # or use numeric device index if specified and no alsa_device
-        if self.device >= 0 and not self.alsa_device:
+        elif self.device >= 0:
             stream_kwargs["device"] = self.device
 
         sd_module = self._sd
@@ -218,6 +221,15 @@ class VadNode(Node):
             resampled = self._resample_if_needed(frame)
             if resampled.size == 0:
                 continue
+
+            now = time.monotonic()
+            if now - self._last_level_log_ts >= 1.0:
+                rms = float(np.sqrt(np.mean(np.square(resampled), dtype=np.float64)))
+                peak = float(np.max(np.abs(resampled)))
+                self.get_logger().info(
+                    f"Audio level rms={rms:.4f} peak={peak:.4f} state={self.current_state}"
+                )
+                self._last_level_log_ts = now
 
             self._vad_buffer = np.concatenate((self._vad_buffer, resampled))
             while self._vad_buffer.shape[0] >= self.frame_samples:

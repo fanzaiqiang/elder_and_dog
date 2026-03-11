@@ -6,12 +6,17 @@ SESSION_NAME="asr-tts-no-vad"
 WORKDIR="/home/jetson/elder_and_dog"
 TMUX_COLS="240"
 TMUX_ROWS="72"
+CT2_LIB_PATH="$HOME/.local/ctranslate2-cuda/lib"
 
 ROBOT_IP="192.168.123.161"
 CONN_TYPE="webrtc"
 
 ASR_PROVIDER_ORDER='["whisper_local"]'
-INPUT_DEVICE="-1"
+ASR_MODEL="small"
+ASR_DEVICE="cuda"
+ASR_COMPUTE_TYPE="float16"
+ASR_CPU_THREADS="4"
+INPUT_DEVICE="0"
 SAMPLE_RATE="16000"
 CAPTURE_SAMPLE_RATE="44100"
 MAX_RECORD_SECONDS="10.0"
@@ -58,7 +63,7 @@ pkill -f "/speech_processor/tts_node" || true
 tmux new-session -d -x "$TMUX_COLS" -y "$TMUX_ROWS" -s "$SESSION_NAME" "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export ROBOT_IP=$ROBOT_IP && export CONN_TYPE=$CONN_TYPE && ros2 launch go2_robot_sdk robot.launch.py enable_tts:=false nav2:=false slam:=false rviz2:=false foxglove:=false'"
 
 GO2_PANE="$(tmux list-panes -t "$SESSION_NAME":0 -F '#{pane_id}')"
-STT_PANE="$(tmux split-window -h -P -F '#{pane_id}' -t "$GO2_PANE" "zsh -lc 'setopt nonomatch; cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && ros2 run speech_processor stt_intent_node --ros-args -p provider_order:=\"$ASR_PROVIDER_ORDER\" -p input_device:=$INPUT_DEVICE -p sample_rate:=$SAMPLE_RATE -p capture_sample_rate:=$CAPTURE_SAMPLE_RATE -p max_record_seconds:=$MAX_RECORD_SECONDS -p speech_end_grace_ms:=$SPEECH_END_GRACE_MS'")"
+STT_PANE="$(tmux split-window -h -P -F '#{pane_id}' -t "$GO2_PANE" "zsh -lc 'setopt nonomatch; cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export LD_LIBRARY_PATH=$CT2_LIB_PATH:\${LD_LIBRARY_PATH:-} && ros2 run speech_processor stt_intent_node --ros-args -p provider_order:=\"$ASR_PROVIDER_ORDER\" -p whisper_local.model_name:=$ASR_MODEL -p whisper_local.device:=$ASR_DEVICE -p whisper_local.compute_type:=$ASR_COMPUTE_TYPE -p whisper_local.cpu_threads:=$ASR_CPU_THREADS -p input_device:=$INPUT_DEVICE -p sample_rate:=$SAMPLE_RATE -p capture_sample_rate:=$CAPTURE_SAMPLE_RATE -p max_record_seconds:=$MAX_RECORD_SECONDS -p speech_end_grace_ms:=$SPEECH_END_GRACE_MS'")"
 tmux split-window -v -t "$STT_PANE" "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && ros2 run speech_processor intent_tts_bridge_node'"
 tmux split-window -v -t "$GO2_PANE" "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export PATH=\"$HOME/.local/bin:\$PATH\" && ros2 run speech_processor tts_node --ros-args -p provider:=$TTS_PROVIDER -p piper_model_path:=$PIPER_MODEL_PATH -p piper_config_path:=$PIPER_CONFIG_PATH -p piper_speaker_id:=$PIPER_SPEAKER_ID -p piper_length_scale:=$PIPER_LENGTH_SCALE -p piper_noise_scale:=$PIPER_NOISE_SCALE -p piper_noise_w:=$PIPER_NOISE_W -p robot_chunk_interval_sec:=$ROBOT_CHUNK_INTERVAL_SEC -p robot_playback_tail_sec:=$ROBOT_PLAYBACK_TAIL_SEC -p robot_volume:=$ROBOT_VOLUME'"
 

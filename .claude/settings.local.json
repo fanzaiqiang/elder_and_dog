@@ -6,7 +6,20 @@
       "Bash(git commit:*)",
       "Bash(find:*)",
       "Bash(tree:*)",
-      "Bash(git -C /home/roy422/ros2_ws/src/elder_and_dog show --stat 29538ea)"
+      "Bash(git -C /home/roy422/ros2_ws/src/elder_and_dog show --stat 29538ea)",
+      "Bash(find /home/roy422/newLife/elder_and_dog -type f -name \"*speech*\" -o -name \"*audio*\" | grep -E \"\\\\.\\(py|md|sh|txt\\)$\")",
+      "Bash(grep -r \"intent_tts_bridge\" /home/roy422/newLife/elder_and_dog --include=\"*.py\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"4001\\\\|4002\\\\|4003\\\\|4004\" /home/roy422/newLife/elder_and_dog/docs --include=\"*.md\" 2>/dev/null | head -10)",
+      "Bash(python3 -c \"\nimport ast, sys\nwith open\\('go2_robot_sdk/go2_robot_sdk/infrastructure/webrtc/webrtc_adapter.py'\\) as f:\n    tree = ast.parse\\(f.read\\(\\)\\)\nprint\\('Syntax OK'\\)\n\")",
+      "Bash(source /opt/ros/humble/setup.bash && colcon build --packages-select go2_robot_sdk 2>&1 | tail -20)",
+      "Read(//opt/ros/humble/**)",
+      "Read(//home/roy422/ros2_ws/install/**)",
+      "Bash(bash -c 'source /opt/ros/humble/setup.bash && colcon build --packages-select go2_robot_sdk 2>&1' | tail -20)",
+      "Bash(ls -1 /home/roy422/newLife/elder_and_dog/scripts/*.sh 2>/dev/null || echo \"No scripts directory found\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('speech_processor/speech_processor/stt_intent_node.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\" && python3 -c \"import ast; ast.parse\\(open\\('speech_processor/speech_processor/intent_tts_bridge_node.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(bash -c 'source /opt/ros/humble/setup.bash && source install/setup.bash 2>/dev/null; colcon build --packages-select speech_processor 2>&1')",
+      "Bash(ssh jetson-nano:*)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('speech_processor/speech_processor/stt_intent_node.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")"
     ],
     "deny": [],
     "ask": []

@@ -395,14 +395,18 @@ class AudioProcessor:
     def convert_to_wav(
         audio_data: bytes, input_format: AudioFormat = AudioFormat.MP3
     ) -> Optional[bytes]:
-        """Convert audio data to WAV format"""
+        """Convert audio data to WAV format (16kHz, 16bit, mono for Go2)"""
         try:
             if input_format == AudioFormat.MP3:
                 audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
             elif input_format == AudioFormat.OGG:
                 audio = AudioSegment.from_ogg(io.BytesIO(audio_data))
+            elif input_format == AudioFormat.WAV:
+                audio = AudioSegment.from_wav(io.BytesIO(audio_data))
             else:
-                return audio_data  # Already WAV
+                return audio_data
+
+            audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
 
             wav_io = io.BytesIO()
             audio.export(wav_io, format="wav")

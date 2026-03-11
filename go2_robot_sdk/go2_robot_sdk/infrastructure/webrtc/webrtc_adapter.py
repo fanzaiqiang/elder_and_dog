@@ -171,11 +171,11 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
             logger.error(f"Error sending stand down command: {e}")
 
     def send_webrtc_request(self, robot_id: str, api_id: int, parameter: Any, topic: str) -> None:
-        """Send WebRTC request"""
+        """Send WebRTC request directly (bypass queue for thread safety)"""
         try:
             payload = gen_command(api_id, parameter, topic)
-            self.webrtc_msgs.put_nowait(payload)
-            logger.debug(f"WebRTC request queued for robot {robot_id}")
+            self.send_command(robot_id, payload)
+            logger.debug(f"WebRTC request sent to robot {robot_id} (api_id={api_id})")
         except Exception as e:
             logger.error(f"Error sending WebRTC request: {e}")
 

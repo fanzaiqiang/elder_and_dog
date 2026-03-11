@@ -56,8 +56,14 @@ class IntentClassifier:
                 ("晚安", 0.9),
                 ("hello", 0.8),
                 ("hi", 0.6),
-                ("greet", 0.8),
                 ("打招呼", 1.0),
+                # 簡體 / Whisper 誤辨
+                ("妳好", 1.0),
+                ("您好", 1.0),
+                ("哈嘍", 0.9),
+                ("哈摟", 0.9),
+                ("嗨嗨", 0.8),
+                ("打擾", 0.7),
             ],
             "come_here": [
                 ("過來", 1.0),
@@ -68,6 +74,15 @@ class IntentClassifier:
                 ("come here", 1.0),
                 ("come", 0.6),
                 ("這邊", 0.7),
+                # 簡體 / Whisper 誤辨
+                ("过来", 1.0),
+                ("来这里", 1.0),
+                ("来我这", 1.0),
+                ("跟我来", 0.8),
+                ("这边", 0.7),
+                ("靠近我", 0.8),
+                ("國來", 0.7),
+                ("郭來", 0.7),
             ],
             "stop": [
                 ("停止", 1.0),
@@ -77,6 +92,15 @@ class IntentClassifier:
                 ("stop", 1.0),
                 ("freeze", 0.8),
                 ("中止", 0.8),
+                # 簡體 / Whisper 誤辨
+                ("不要动", 0.9),
+                ("停視", 0.8),
+                ("聽下", 0.8),
+                ("請停", 0.9),
+                ("请停", 0.9),
+                ("別動", 0.9),
+                ("别动", 0.9),
+                ("停", 0.5),
             ],
             "take_photo": [
                 ("拍照", 1.0),
@@ -87,6 +111,18 @@ class IntentClassifier:
                 ("take a photo", 1.0),
                 ("photo", 0.7),
                 ("camera", 0.6),
+                # 簡體 / Whisper 誤辨
+                ("拍张照", 1.0),
+                ("拍一张", 0.9),
+                ("拍個照", 0.9),
+                ("拍个照", 0.9),
+                ("拍攝", 0.9),
+                ("拍摄", 0.9),
+                ("照片", 0.7),
+                ("拍上", 0.7),
+                ("派上", 0.6),
+                ("拍找", 0.8),
+                ("拍招", 0.8),
             ],
             "status": [
                 ("狀態", 1.0),
@@ -97,13 +133,23 @@ class IntentClassifier:
                 ("status", 1.0),
                 ("how are you", 0.7),
                 ("battery", 0.6),
+                # 簡體 / Whisper 誤辨
+                ("状态", 1.0),
+                ("你还好吗", 0.8),
+                ("现在怎么样", 0.8),
+                ("目前情况", 0.8),
+                ("电量", 0.8),
+                ("回覆", 0.7),
+                ("回復", 0.7),
+                ("回复", 0.7),
+                ("撞態", 0.7),
             ],
         }
 
     @staticmethod
     def _normalize(text: str) -> str:
         text = text.strip().lower()
-        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r"\s+", "", text)
         return text
 
     def classify(self, text: str) -> IntentMatch:
@@ -130,7 +176,9 @@ class IntentClassifier:
                     best_score = normalized_score
                     best_keywords = matched
 
-        return IntentMatch(intent=best_intent, confidence=best_score, matched_keywords=best_keywords)
+        return IntentMatch(
+            intent=best_intent, confidence=best_score, matched_keywords=best_keywords
+        )
 
 
 @dataclass
@@ -148,7 +196,9 @@ class ASRProvider(ABC):
         self.timeout_sec = timeout_sec
 
     @abstractmethod
-    def transcribe(self, audio_bytes: bytes, sample_rate: int, language: str) -> ASRResult:
+    def transcribe(
+        self, audio_bytes: bytes, sample_rate: int, language: str
+    ) -> ASRResult:
         raise NotImplementedError
 
 
@@ -167,7 +217,9 @@ class QwenASRProvider(ASRProvider):
         self.model_name = model_name
         self.response_text_field = response_text_field
 
-    def transcribe(self, audio_bytes: bytes, sample_rate: int, language: str) -> ASRResult:
+    def transcribe(
+        self, audio_bytes: bytes, sample_rate: int, language: str
+    ) -> ASRResult:
         if requests is None:
             raise RuntimeError("requests is required for QwenASRProvider")
         if not self.base_url:
@@ -175,7 +227,11 @@ class QwenASRProvider(ASRProvider):
 
         started = time.monotonic()
         files = {"file": ("speech.wav", audio_bytes, "audio/wav")}
-        data = {"model": self.model_name, "language": language, "sample_rate": str(sample_rate)}
+        data = {
+            "model": self.model_name,
+            "language": language,
+            "sample_rate": str(sample_rate),
+        }
         headers: Dict[str, str] = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -217,7 +273,9 @@ class QwenASRProvider(ASRProvider):
                 if isinstance(value, str):
                     return value.strip()
 
-        raise RuntimeError(f"Unable to extract transcript from Qwen response keys={list(payload.keys())}")
+        raise RuntimeError(
+            f"Unable to extract transcript from Qwen response keys={list(payload.keys())}"
+        )
 
 
 class WhisperLocalProvider(ASRProvider):
@@ -273,13 +331,19 @@ class WhisperLocalProvider(ASRProvider):
                     "Whisper local backend not available. Install faster-whisper or openai-whisper."
                 ) from exc
 
-    def transcribe(self, audio_bytes: bytes, sample_rate: int, language: str) -> ASRResult:
+    def transcribe(
+        self, audio_bytes: bytes, sample_rate: int, language: str
+    ) -> ASRResult:
         self._ensure_model()
         started = time.monotonic()
 
         if self._backend == "faster_whisper":
-            return self._transcribe_faster_whisper(audio_bytes, sample_rate, language, started)
-        return self._transcribe_openai_whisper(audio_bytes, sample_rate, language, started)
+            return self._transcribe_faster_whisper(
+                audio_bytes, sample_rate, language, started
+            )
+        return self._transcribe_openai_whisper(
+            audio_bytes, sample_rate, language, started
+        )
 
     def _transcribe_faster_whisper(
         self,
@@ -302,7 +366,10 @@ class WhisperLocalProvider(ASRProvider):
             text=text,
             provider=self.provider_name,
             latency_ms=latency_ms,
-            raw={"backend": self._backend, "language": getattr(info, "language", language)},
+            raw={
+                "backend": self._backend,
+                "language": getattr(info, "language", language),
+            },
             degraded=True,
         )
 
@@ -318,7 +385,9 @@ class WhisperLocalProvider(ASRProvider):
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as temp_file:
             temp_file.write(audio_bytes)
             temp_file.flush()
-            result = self._model.transcribe(temp_file.name, language=language or self.language)
+            result = self._model.transcribe(
+                temp_file.name, language=language or self.language
+            )
 
         text = str(result.get("text", "")).strip()
         latency_ms = (time.monotonic() - started) * 1000.0
@@ -350,19 +419,27 @@ class SttIntentNode(Node):
         self.providers = self._build_providers()
         self.provider_order = self._build_provider_order()
 
-        self.intent_event_pub = self.create_publisher(String, self.intent_event_topic, 10)
+        self.intent_event_pub = self.create_publisher(
+            String, self.intent_event_topic, 10
+        )
         self.intent_pub = self.create_publisher(String, self.intent_topic, 10)
         self.asr_pub = self.create_publisher(String, self.asr_result_topic, 10)
         self.state_pub = self.create_publisher(String, self.state_topic, 10)
 
-        self.vad_sub = self.create_subscription(String, self.vad_event_topic, self._on_vad_event, 10)
-        self.text_sub = self.create_subscription(String, self.text_input_topic, self._on_text_input, 10)
+        self.vad_sub = self.create_subscription(
+            String, self.vad_event_topic, self._on_vad_event, 10
+        )
+        self.text_sub = self.create_subscription(
+            String, self.text_input_topic, self._on_text_input, 10
+        )
 
         self._sounddevice = None
         self._stream = None
         self._audio_queue: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=512)
         self._record_lock = threading.Lock()
-        self._pre_roll_frames: Deque[np.ndarray] = deque(maxlen=self.pre_roll_frame_count)
+        self._pre_roll_frames: Deque[np.ndarray] = deque(
+            maxlen=self.pre_roll_frame_count
+        )
         self._recorder_state = RecorderState()
         self._active_capture_rate = self.capture_sample_rate or self.sample_rate
         self._processing_lock = threading.Lock()
@@ -372,18 +449,24 @@ class SttIntentNode(Node):
         self._last_transcript = ""
         self._state = "INITIALIZING"
         self._speech_end_deadline = 0.0
+        self._energy_vad_speaking = False
+        self._energy_vad_silence_start = 0.0
+        self._energy_vad_speech_start = 0.0
 
         self._load_sounddevice()
         self._start_audio_stream()
 
         self.process_timer = self.create_timer(0.02, self._drain_audio_queue)
         self.timeout_timer = self.create_timer(0.1, self._check_recording_timeout)
-        self.state_timer = self.create_timer(1.0 / self.state_publish_hz, self._publish_state)
+        self.state_timer = self.create_timer(
+            1.0 / self.state_publish_hz, self._publish_state
+        )
 
         self._state = "LISTENING"
         self.get_logger().info(
             "stt_intent_node started "
             f"(providers={','.join(self.provider_order)}, sample_rate={self.sample_rate}, "
+            f"energy_vad={self.energy_vad_enabled}, "
             f"text_fallback_topic={self.text_input_topic})"
         )
 
@@ -420,6 +503,12 @@ class SttIntentNode(Node):
         self.declare_parameter("whisper_local.compute_type", "int8")
         self.declare_parameter("whisper_local.cpu_threads", 4)
 
+        self.declare_parameter("energy_vad.enabled", True)
+        self.declare_parameter("energy_vad.start_threshold", 0.015)
+        self.declare_parameter("energy_vad.stop_threshold", 0.01)
+        self.declare_parameter("energy_vad.silence_duration_ms", 800)
+        self.declare_parameter("energy_vad.min_speech_ms", 300)
+
     def _load_parameters(self) -> None:
         self.sample_rate = int(self.get_parameter("sample_rate").value)
         self.capture_sample_rate = int(self.get_parameter("capture_sample_rate").value)
@@ -445,16 +534,42 @@ class SttIntentNode(Node):
         self.qwen_api_key = str(self.get_parameter("qwen_asr.api_key").value)
         self.qwen_timeout_sec = float(self.get_parameter("qwen_asr.timeout_sec").value)
         self.qwen_model_name = str(self.get_parameter("qwen_asr.model_name").value)
-        self.qwen_response_text_field = str(self.get_parameter("qwen_asr.response_text_field").value)
+        self.qwen_response_text_field = str(
+            self.get_parameter("qwen_asr.response_text_field").value
+        )
 
-        self.whisper_model_name = str(self.get_parameter("whisper_local.model_name").value)
-        self.whisper_timeout_sec = float(self.get_parameter("whisper_local.timeout_sec").value)
+        self.whisper_model_name = str(
+            self.get_parameter("whisper_local.model_name").value
+        )
+        self.whisper_timeout_sec = float(
+            self.get_parameter("whisper_local.timeout_sec").value
+        )
         self.whisper_device = str(self.get_parameter("whisper_local.device").value)
-        self.whisper_compute_type = str(self.get_parameter("whisper_local.compute_type").value)
-        self.whisper_cpu_threads = int(self.get_parameter("whisper_local.cpu_threads").value)
+        self.whisper_compute_type = str(
+            self.get_parameter("whisper_local.compute_type").value
+        )
+        self.whisper_cpu_threads = int(
+            self.get_parameter("whisper_local.cpu_threads").value
+        )
+
+        self.energy_vad_enabled = bool(self.get_parameter("energy_vad.enabled").value)
+        self.energy_vad_start_threshold = float(
+            self.get_parameter("energy_vad.start_threshold").value
+        )
+        self.energy_vad_stop_threshold = float(
+            self.get_parameter("energy_vad.stop_threshold").value
+        )
+        self.energy_vad_silence_duration_ms = int(
+            self.get_parameter("energy_vad.silence_duration_ms").value
+        )
+        self.energy_vad_min_speech_ms = int(
+            self.get_parameter("energy_vad.min_speech_ms").value
+        )
 
         pre_roll_samples = int(self.sample_rate * (self.pre_roll_ms / 1000.0))
-        self.pre_roll_frame_count = max(1, pre_roll_samples // max(1, self.frame_samples))
+        self.pre_roll_frame_count = max(
+            1, pre_roll_samples // max(1, self.frame_samples)
+        )
 
     def _build_providers(self) -> Dict[str, ASRProvider]:
         providers: Dict[str, ASRProvider] = {}
@@ -476,7 +591,9 @@ class SttIntentNode(Node):
         return providers
 
     def _build_provider_order(self) -> List[str]:
-        order = [str(item).strip() for item in self.provider_order_param if str(item).strip()]
+        order = [
+            str(item).strip() for item in self.provider_order_param if str(item).strip()
+        ]
         valid_order = [name for name in order if name in self.providers]
         if not valid_order:
             valid_order = ["qwen_cloud", "whisper_local"]
@@ -511,6 +628,7 @@ class SttIntentNode(Node):
             os.environ["ALSA_DEFAULT"] = self.alsa_device
             self.get_logger().info(f"Using ALSA device for STT: {self.alsa_device}")
 
+        selected_device_desc = "default"
         stream_kwargs = {
             "samplerate": self._active_capture_rate,
             "channels": self.channels,
@@ -520,9 +638,20 @@ class SttIntentNode(Node):
         }
         if self.input_device >= 0 and not self.alsa_device:
             stream_kwargs["device"] = self.input_device
+            try:
+                dev_info = self._sounddevice.query_devices(self.input_device)
+                selected_device_desc = (
+                    f"{self.input_device} ({dev_info.get('name', 'unknown')})"
+                )
+            except Exception:
+                selected_device_desc = f"{self.input_device}"
+        elif self.alsa_device:
+            selected_device_desc = f"alsa:{self.alsa_device}"
+        else:
+            default_device = self._sounddevice.query_devices(kind="input")
+            selected_device_desc = str(default_device.get("name", "default"))
 
-        default_device = self._sounddevice.query_devices(kind="input")
-        self.get_logger().info(f"Opening STT audio stream: {default_device['name']}")
+        self.get_logger().info(f"Opening STT audio stream: {selected_device_desc}")
         self._stream = self._sounddevice.InputStream(**stream_kwargs)
         self._stream.start()
 
@@ -544,7 +673,9 @@ class SttIntentNode(Node):
             return frame.astype(np.float32)
 
         in_len = frame.shape[0]
-        out_len = max(1, int(round(in_len * self.sample_rate / self._active_capture_rate)))
+        out_len = max(
+            1, int(round(in_len * self.sample_rate / self._active_capture_rate))
+        )
         x_old = np.linspace(0.0, 1.0, num=in_len, endpoint=False)
         x_new = np.linspace(0.0, 1.0, num=out_len, endpoint=False)
         return np.interp(x_new, x_old, frame).astype(np.float32)
@@ -563,6 +694,47 @@ class SttIntentNode(Node):
                 if self._recorder_state.is_recording:
                     self._recorder_state.chunks.append(resampled)
 
+            if self.energy_vad_enabled:
+                self._energy_vad_process(resampled)
+
+    def _energy_vad_process(self, frame: np.ndarray) -> None:
+        rms = float(np.sqrt(np.mean(frame**2)))
+        now = time.monotonic()
+
+        if not self._energy_vad_speaking:
+            if rms >= self.energy_vad_start_threshold:
+                with self._record_lock:
+                    if self._recorder_state.is_recording:
+                        return
+                self._energy_vad_speaking = True
+                self._energy_vad_silence_start = 0.0
+                self._energy_vad_speech_start = now
+                session_id = self._new_session_id(prefix="ev")
+                self._handle_speech_start(session_id)
+                self.get_logger().info(f"Energy VAD: speech start (rms={rms:.4f})")
+        else:
+            if rms < self.energy_vad_stop_threshold:
+                if self._energy_vad_silence_start == 0.0:
+                    self._energy_vad_silence_start = now
+                elif (
+                    now - self._energy_vad_silence_start
+                ) * 1000.0 >= self.energy_vad_silence_duration_ms:
+                    speech_dur = now - self._energy_vad_speech_start
+                    if speech_dur * 1000.0 >= self.energy_vad_min_speech_ms:
+                        self._handle_speech_end()
+                        self.get_logger().info(
+                            f"Energy VAD: speech end (duration={speech_dur:.2f}s)"
+                        )
+                    else:
+                        with self._record_lock:
+                            self._recorder_state = RecorderState()
+                            self._speech_end_deadline = 0.0
+                        self.get_logger().debug("Energy VAD: too short, discarded")
+                    self._energy_vad_speaking = False
+                    self._energy_vad_silence_start = 0.0
+            else:
+                self._energy_vad_silence_start = 0.0
+
     def _check_recording_timeout(self) -> None:
         with self._record_lock:
             if not self._recorder_state.is_recording:
@@ -572,7 +744,9 @@ class SttIntentNode(Node):
             started = self._recorder_state.start_monotonic
             if now - started >= self.max_record_seconds:
                 session_id = self._recorder_state.session_id
-                self.get_logger().warn(f"Speech capture timeout for session={session_id}")
+                self.get_logger().warn(
+                    f"Speech capture timeout for session={session_id}"
+                )
                 self._finalize_recording_locked(reason="capture_timeout")
                 return
 
@@ -597,7 +771,9 @@ class SttIntentNode(Node):
     def _handle_speech_start(self, session_id: str) -> None:
         with self._record_lock:
             if self._recorder_state.is_recording:
-                self.get_logger().warn("Received speech_start while recording; resetting session")
+                self.get_logger().warn(
+                    "Received speech_start while recording; resetting session"
+                )
                 self._recorder_state = RecorderState()
 
             initial_chunks = list(self._pre_roll_frames)
@@ -616,7 +792,9 @@ class SttIntentNode(Node):
         with self._record_lock:
             if not self._recorder_state.is_recording:
                 return
-            self._speech_end_deadline = time.monotonic() + (self.speech_end_grace_ms / 1000.0)
+            self._speech_end_deadline = time.monotonic() + (
+                self.speech_end_grace_ms / 1000.0
+            )
 
     def _finalize_recording_locked(self, reason: str) -> None:
         state = self._recorder_state
@@ -649,9 +827,13 @@ class SttIntentNode(Node):
             wav_file.writeframes(pcm.tobytes())
         return wav_io.getvalue()
 
-    def _process_audio_session(self, session_id: str, audio_bytes: bytes, reason: str) -> None:
+    def _process_audio_session(
+        self, session_id: str, audio_bytes: bytes, reason: str
+    ) -> None:
         if not self._processing_lock.acquire(blocking=False):
-            self.get_logger().warn("ASR processing busy; dropping overlapped speech segment")
+            self.get_logger().warn(
+                "ASR processing busy; dropping overlapped speech segment"
+            )
             self._last_error = "processing busy"
             self._state = "LISTENING"
             return
@@ -659,8 +841,12 @@ class SttIntentNode(Node):
         try:
             transcript_result, errors = self._transcribe_with_fallback(audio_bytes)
             if transcript_result is None:
-                self._last_error = "; ".join(errors) if errors else "all providers failed"
-                self.get_logger().error(f"ASR failed for session={session_id}: {self._last_error}")
+                self._last_error = (
+                    "; ".join(errors) if errors else "all providers failed"
+                )
+                self.get_logger().error(
+                    f"ASR failed for session={session_id}: {self._last_error}"
+                )
                 self._publish_asr_result(session_id, "", "none", 0.0, True, reason)
                 self._state = "DEGRADED"
                 return
@@ -691,18 +877,24 @@ class SttIntentNode(Node):
         except Exception as exc:
             self._last_error = str(exc)
             self._state = "ERROR"
-            self.get_logger().error(f"Audio processing failed for session={session_id}: {exc}")
+            self.get_logger().error(
+                f"Audio processing failed for session={session_id}: {exc}"
+            )
         finally:
             self._processing_lock.release()
 
-    def _transcribe_with_fallback(self, audio_bytes: bytes) -> Tuple[Optional[ASRResult], List[str]]:
+    def _transcribe_with_fallback(
+        self, audio_bytes: bytes
+    ) -> Tuple[Optional[ASRResult], List[str]]:
         errors: List[str] = []
         for provider_name in self.provider_order:
             provider = self.providers.get(provider_name)
             if provider is None:
                 continue
             try:
-                result = provider.transcribe(audio_bytes, self.sample_rate, self.language)
+                result = provider.transcribe(
+                    audio_bytes, self.sample_rate, self.language
+                )
                 if result.text.strip():
                     if provider_name != self.provider_order[0]:
                         result.degraded = True
@@ -823,7 +1015,9 @@ class SttIntentNode(Node):
                 self._stream.stop()
                 self._stream.close()
             except Exception as exc:
-                self.get_logger().warn(f"Failed to close STT audio stream cleanly: {exc}")
+                self.get_logger().warn(
+                    f"Failed to close STT audio stream cleanly: {exc}"
+                )
         super().destroy_node()
 
 
@@ -838,7 +1032,8 @@ def main(args=None) -> None:
     finally:
         if node is not None:
             node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

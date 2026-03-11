@@ -1565,8 +1565,210 @@ ssh jetson-nano "free -h" >> /tmp/test_mem_$(date +%Y%m%d_%H%M%S).log
 - **峰值記憶體**：測試過程中觀察到的最高記憶體占用
 - **失敗時資源狀態**：若測試失敗，需記錄當時的 `tegrastats` 輸出
 
+### 15.3 2026-03-12 進度更新（Jetson 實測）
+
+#### 今日完成
+
+- ASR 推理路徑切到 `whisper_local + small + cuda + float16`，已能在 Jetson 跑通。
+- `stt_intent_node` 以 ALSA 裝置啟動成功：`-p alsa_device:=plughw:0,0`（避開動態 `input_device` 漂移）。
+- `go2_driver_node` 與 `tts_node` 在 `ROS_DOMAIN_ID=0` 下可互通；`/webrtc_req` 已確認 `Publisher=1 (tts_node)`、`Subscription=1 (go2_driver_node)`。
+- Go2 已可聽到 TTS 播放聲音（非完全無聲）。
+- Intent 規則已補強常見誤辨詞（含簡體/口語變體），`take_photo / stop / status / come_here / greet` 命中率有提升。
+
+#### 今日主要問題
+
+- 英文 TTS 聽感差（中文音色講英文可懂度低）。
+- 語音播放偶發「加速感 / 被切斷感」。
+- STT/Bridge/Driver 曾出現殘留進程與重複節點（多次手動啟停造成 graph 污染）。
+- `go2_driver_node` 有間歇重連：`Consent to send expired -> reconnecting`。
+
+#### 今日已解問題
+
+- `ssh jetson-nano` 解析失敗：已用 Tailscale IP 建立 `~/.ssh/config` 映射恢復連線。
+- `Invalid number of channels [PaErrorCode -9998]`：改用 `alsa_device:=plughw:0,0` 後可穩定啟動 STT。
+- `/tts` 發布卡在 `Waiting for at least 1 matching subscription(s)`：確認為「發送端環境/路徑錯誤或 subscriber 未啟」，非 topic 本身故障。
+- Go2 無聲根因已縮小為「播放參數與音訊格式/連線穩定度」而非 ROS topic 斷線。
+
+#### 今日代辦（下一輪）
+
+1. ~~Jetson 套用並重啟最新 `tts_node`（16kHz/16bit/mono 重採樣版本）後，重測 20 輪播音穩定度。~~ ✅ 已完成
+2. 英文語音改英文 Piper 模型（例如 `en_US-lessac-medium`），與中文模型分開 profile 啟動。
+3. 固化單一路徑啟動腳本（clean-start -> driver -> stt -> bridge -> tts），避免手動多開造成重複節點。
+4. 針對 `Consent to send expired` 做網路與 Go2 端連線穩定化檢查（同網段、單連線、減少高流量負載）。
+5. 補 30 輪統計（命中率、unknown、empty、busy）並回填本文件 15.1 表格。
+6. RTX 8000 架 vLLM + Qwen3.5-27B，寫 `llm_bridge_node` 取代模板回覆。
+
+### 15.4 2026-03-12 踩坑總記錄與根因分析
+
+> **目的**：記錄本輪除錯中遇到的所有陷阱，供後續開發者避坑。
+
+#### 根因一：asyncio.Queue 跨執行緒丟包（最難定位的 bug）
+
+**現象**：`/webrtc_req` 封包序列完整（4004→4001→4003→4002），WebRTC log 顯示「sent」，但 Go2 完全沒聲音。
+
+**根因**：`webrtc_adapter.py` 的 `send_webrtc_request()` 用 `asyncio.Queue.put_nowait()` 從 ROS2 callback 執行緒塞資料，再由 asyncio event loop 執行緒的 `process_webrtc_commands()` 每 100ms 輪詢消費。但 Python 的 `asyncio.Queue` **明確不是執行緒安全的**（官方文件有寫），跨執行緒操作會靜默丟失資料。
+
+**為什麼難發現**：
+- 不會報錯、不會 crash，只是偶發丟資料
+- 同一個 class 裡的動作指令（stand/sit/walk）直接呼叫 `send_command()` 走 `run_coroutine_threadsafe`，一直都正常
+- 只有音訊指令走 queue 路徑，所以「動作正常但音訊無聲」
+
+**修復**：`webrtc_adapter.py:173` — `send_webrtc_request()` 改為直接呼叫 `send_command(robot_id, payload)`，繞過 queue。
+
+**教訓**：
+- `asyncio.Queue` 只能在同一個 event loop 內使用，跨執行緒請用 `queue.Queue` 或 `run_coroutine_threadsafe`
+- 其他指令正常不代表所有路徑都正常，每條路徑都要獨立驗證
+
 ---
 
-*最後更新：2026-03-11（no-VAD 主線決策版）*  
-*適用專案：PawAI / elder_and_dog*  
+#### 根因二：WAV sample rate 不匹配（Go2 音訊加速）
+
+**現象**：Go2 有聲音了，但語速明顯加速、講不清楚。
+
+**根因**：Piper 中文模型 `zh_CN-huayan-medium` 原生輸出 **22050Hz** WAV。`tts_node` 做了 WAV→MP3→WAV 雙重轉換但沒有重取樣，Go2 的 audiohub 內部以不同 sample rate（推測 16kHz）播放，導致聲音被加速。
+
+**修復**：`tts_node.py` 的 `convert_to_wav()` 加入強制重取樣：
+
+```python
+audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+```
+
+**教訓**：
+- Go2 audiohub **沒有官方文件**說明支援的音訊格式，16kHz/16bit/mono 是根據嵌入式慣例推測
+- 發送前一律標準化格式，不要假設下游能處理任意 sample rate
+- Piper 不同模型的 sample rate 不同（英文模型可能是 16kHz 或 22050Hz），統一重取樣可避免問題
+
+---
+
+#### 根因三：開發/執行環境分離導致的同步問題
+
+**現象**：改了 code 但行為沒變、build 產物被刪、多個同名 node 互相干擾。
+
+**子問題與對策**：
+
+| 子問題 | 原因 | 對策 |
+|--------|------|------|
+| build 後行為沒變 | `colcon build` 只更新 `install/`，正在跑的 node 是舊版 | **build 後必須重啟 node**（kill → source → run） |
+| `install/` 被刪 | `rsync --delete` 把 Jetson 的 build 產物清掉 | rsync 加 `--exclude='build/' --exclude='install/' --exclude='log/'` 或 `--filter=':- .gitignore'` |
+| 重複節點互相干擾 | 手動開多個 terminal、tmux 殘留進程 | 每次啟動前 `pkill -9 -f "node_name"` + `tmux kill-server` |
+| `ROS_DOMAIN_ID` 不一致 | 部分 terminal 手動設了 `ROS_DOMAIN_ID=123`，其他沒設 | **所有 node 必須在同一個 domain**（預設 0，除非有明確理由） |
+| `go2_driver_node` 不在 node graph | ROS2 spin 執行緒被 `asyncio.wait(FIRST_COMPLETED)` cancel | 需注意 `main.py` 的 task 生命週期管理 |
+
+---
+
+#### 根因四：Jetson CUDA 環境未啟用（GPU 閒置）
+
+**現象**：Whisper Small 在 CPU 上跑 10 秒+，`ASR processing busy` 大量出現。
+
+**根因**：
+- Jetson Orin Nano 有完整 CUDA 12.6 + cuDNN 9.3
+- 但 `torch` 是 pip 裝的 CPU 版（`2.10.0+cpu`）
+- `ctranslate2` 也是 CPU-only（沒有 CUDA 支援）
+- GPU 完全閒置，所有推理都在 CPU 上
+
+**修復**：
+- 編譯安裝 CUDA 版 CTranslate2 到 `~/.local/ctranslate2-cuda/`
+- 啟動時 `export LD_LIBRARY_PATH=$HOME/.local/ctranslate2-cuda/lib:${LD_LIBRARY_PATH:-}`
+- Whisper Small + CUDA float16 延遲從 10s+ 降到 **0.6s**
+
+**教訓**：
+- Jetson 上用 `pip install torch` 裝的是 x86 CPU 版，不會自動用 GPU
+- Jetson 需要 NVIDIA 官方提供的 aarch64 CUDA wheel（JetPack 對應版本）
+- 確認方式：`python3 -c "import torch; print(torch.cuda.is_available())"` — 如果是 False 就是 CPU 版
+
+---
+
+#### 根因五：麥克風裝置漂移
+
+**現象**：`stt_intent_node` 啟動後 log 顯示 `Opening STT audio stream: default`，但完全收不到語音。
+
+**根因**：
+- `input_device=-1` 讓 sounddevice 使用 ALSA「default」裝置（device 33）
+- Jetson 上 default 可能指向 NVIDIA APE 而非 HyperX SoloCast
+- HyperX SoloCast 是 device 0（`hw:0,0`），原生 sample rate 44100Hz
+
+**修復**：
+- 明確指定 `input_device:=0` 或 `alsa_device:=plughw:0,0`
+- 改良 `_start_audio_stream()` 的 log，顯示實際使用的裝置名稱而非 "default"
+
+**教訓**：
+- Jetson 插拔 USB 或重開機後，裝置索引可能漂移
+- 用 `alsa_device:=plughw:0,0` 比 `input_device:=0` 更穩定（ALSA 名稱不隨 sounddevice 索引漂移）
+- 測試前先用 `arecord -l` 或 `python3 scripts/mic_check.py` 確認實際裝置
+
+---
+
+#### 根因六：Intent 名稱不匹配與簡繁不一致
+
+**現象**：說「你好」被辨識為 `unknown`，所有 intent 都不命中。
+
+**子問題**：
+
+1. **名稱不匹配**：`stt_intent_node` 發布 `greet`，但 `intent_tts_bridge_node` 的 template key 是 `hello` — 只有 `stop` 對得上
+2. **空格問題**：Whisper 輸出 `"你 好"`（有空格），但 keyword `"你好"` 做 substring match 找不到
+3. **簡繁問題**：Whisper Small 訓練資料以簡體為主，常輸出 `"请过来"` 而非 `"請過來"`
+
+**修復**：
+- `intent_tts_bridge_node.py` 的 template keys 改為與 `SUPPORTED_INTENTS` 一致（greet/come_here/stop/take_photo/status）
+- `IntentClassifier._normalize()` 改為 `re.sub(r"\s+", "", text)` 移除所有空格
+- 每個 intent 加入繁體+簡體+常見 Whisper 誤辨詞
+
+**教訓**：
+- 兩個 node 之間的契約（intent 名稱）必須明確定義在一個地方，不能各寫各的
+- Whisper 的中文輸出不穩定（繁簡混用、字間插空格），keyword 比對前必須正規化
+- 容錯詞需要從實測 log 中收集，不能只靠猜測
+
+---
+
+#### 安全啟動 SOP（避免再犯）
+
+```bash
+# 1. 全清（每次測試前必做）
+tmux kill-server 2>/dev/null
+pkill -9 -f "stt_intent_node|intent_tts_bridge|tts_node|go2_driver_node|robot.launch.py" 2>/dev/null
+sleep 2
+ps aux | grep -E "stt_intent|tts_node|go2_driver|intent_tts" | grep -v grep && echo "WARNING: 還有殘留!" || echo "clean"
+
+# 2. 確認環境
+cd ~/elder_and_dog
+unset COLCON_CURRENT_PREFIX
+source /opt/ros/humble/setup.zsh
+source install/setup.zsh
+export LD_LIBRARY_PATH=$HOME/.local/ctranslate2-cuda/lib:${LD_LIBRARY_PATH:-}
+# 不要設 ROS_DOMAIN_ID（用預設 0）
+
+# 3. 確認麥克風
+python3 scripts/mic_check.py --device 0 --sample-rate 44100
+
+# 4. 依序啟動（每個一個 terminal）
+# Terminal A: go2_driver（最小負載）
+ros2 run go2_robot_sdk go2_driver_node
+
+# Terminal B: stt_intent_node
+ros2 run speech_processor stt_intent_node --ros-args \
+  -p provider_order:='["whisper_local"]' \
+  -p whisper_local.model_name:=small \
+  -p whisper_local.device:=cuda \
+  -p whisper_local.compute_type:=float16 \
+  -p alsa_device:=plughw:0,0
+
+# Terminal C: intent_tts_bridge_node
+ros2 run speech_processor intent_tts_bridge_node
+
+# Terminal D: tts_node
+ros2 run speech_processor tts_node --ros-args -p provider:=piper \
+  -p piper_model_path:=/home/jetson/models/piper/zh_CN-huayan-medium.onnx \
+  -p piper_config_path:=/home/jetson/models/piper/zh_CN-huayan-medium.onnx.json
+
+# 5. 驗證
+ros2 node list  # 應有 4 個 node，無重複
+ros2 topic info /webrtc_req -v  # Subscription count 應為 1
+ros2 topic pub --once /tts std_msgs/msg/String '{data: "系統就緒"}'
+# Go2 應播出清晰中文
+```
+
+---
+
+*最後更新：2026-03-12（踩坑總記錄與根因分析）*
+*適用專案：PawAI / elder_and_dog*
 *維護用途：Jetson MVP 語音功能測試與展示前驗收*

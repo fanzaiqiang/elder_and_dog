@@ -42,15 +42,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotorCmds.msg"
   "msg/MotorState.msg"
   "msg/MotorStates.msg"
-  "msg/SpeechIntentEvent.msg"
-  "msg/SpeechState.msg"
-  "msg/ArbitratorState.msg"
-  "msg/BrainState.msg"
-  "msg/FaceDetectionEvent.msg"
-  "msg/FaceIdentityEvent.msg"
-  "msg/FaceState.msg"
-  "msg/GestureEvent.msg"
-  "msg/GestureState.msg"
   "msg/PathPoint.msg"
   "msg/Req.msg"
   "msg/Res.msg"
@@ -63,7 +54,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/VoxelHeightMapState.msg"
   "msg/WebRtcReq.msg"
   "msg/WirelessController.msg"
-  "msg/SkillExecutionEvent.msg"
 
   # Custom services
   "srv/MoveForDuration.srv"

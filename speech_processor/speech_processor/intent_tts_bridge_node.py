@@ -35,12 +35,12 @@ class IntentTtsBridgeNode(Node):
         )
 
         self.reply_templates: Dict[str, str] = {
-            "hello": "哈囉，我在這裡。",
-            "sit": "收到，請坐下。",
-            "stand": "收到，請站起來。",
+            "greet": "哈囉，我在這裡。",
+            "come_here": "收到，我過去找你。",
             "stop": "好的，停止動作。",
-            "chat": "我正在進行語音互動測試。",
-            "unknown": "我沒聽清楚，請再說一次。",
+            "take_photo": "收到，正在拍照。",
+            "status": "我目前狀態正常。",
+            "unknown": "請再說一次。",
         }
 
         self.tts_pub = self.create_publisher(String, self.tts_topic, 10)

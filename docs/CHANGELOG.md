@@ -1,5 +1,72 @@
 # 文件修正記錄
 
+## 2026/03/13 - Docs 結構級重構
+
+### 背景
+
+docs/ 累積大量幽靈文件（無對應程式碼）、重複內容散佈在多個入口、缺乏文件治理規則。
+本輪重構目標：消除幽靈文件、建立責任邊界與衝突仲裁、讓所有入口指向單一真相來源。
+
+設計規格：[`superpowers/specs/2026-03-13-docs-restructure-design.md`](./superpowers/specs/2026-03-13-docs-restructure-design.md)
+
+### 1. 主幹入口重寫
+
+| 文件 | 變更 |
+|------|------|
+| 根 `README.md` | 541→38 行，砍為純入口頁（一句話定位 + 4 連結 + quick start） |
+| `docs/README.md` | 重寫為二級導航，移除「歷史與研究」區塊，新增文件治理規則專區 |
+| `docs/architecture/README.md` | 200→33 行，砍為純導航，移除重複的三層架構圖，`face_perception.md` 標為 SUPERSEDED |
+| `CLAUDE.md` | 304→208 行，完整規格表改引用連結，保留操作型內容（建構/除錯/已知陷阱） |
+
+### 2. 文件治理規則確立
+
+**責任邊界**：`mission` 定方向，`architecture` 定契約，`Pawai-studio` 定 Studio，`modules` 定模組，`setup` 定操作，程式碼庫定現況，`CLAUDE.md` 不定規格。
+
+**衝突仲裁**（依問題類型）：
+- 專案方向 → `mission/`
+- ROS2 介面 → `architecture/`
+- Studio 設計 → `Pawai-studio/`
+- 模組內部 → 各模組 README
+- 安裝部署 → `setup/`
+
+### 3. 幽靈文件歸檔
+
+| 來源 | 去向 | 說明 |
+|------|------|------|
+| `mission/vision.md` | `archive/mission/` | 已被 mission/README.md 取代 |
+| `mission/roadmap.md` | `archive/mission/` | 已被 mission/README.md + handoff_316.md 取代 |
+| `mission/agentic_embodied_ai_roadmap.md` | `archive/mission/` | 早期大規模技術路線 |
+| `design/` | `archive/design/` | MCP prompt、Embodied AI 研究、開源致謝 |
+| `refactor/` | `archive/refactor/` | 早期重構計畫 |
+| `logs/` | `archive/logs/` | 2025/11 ~ 2026/02 開發日誌 |
+| `testing/` | `archive/testing/` | SLAM Phase 1.5 測試報告 |
+
+### 4. 標記與核對
+
+- `mission/README.md` §10.1 加 NOTE 標記 `brain_v1.md`（幽靈引用）、已歸檔檔案
+- `architecture/clean_architecture.md` banner 補充偏差清單（face_perception 不在 repo、gesture_module 未建立、speech_processor 未採用 CA）
+- `architecture/data_flow.md` banner 補充結構性差異（/audio/ 不存在、topic 名稱錯誤、Executive 未落地）
+
+### 5. 本輪不處理
+
+- `modules/` — 規劃中，中期建立
+- 中文模組資料夾（5 個）— 原地不動，中期收編 `modules/`
+- `mission/meeting_notes_supplement.md` — 延後審查
+
+### Commits
+
+```
+8078b3c docs: 砍薄根目錄 README 為純入口頁
+f93f6a7 docs: 重寫 docs/README.md 為二級導航
+01e4644 docs: 砍薄 architecture/README.md 為純導航頁
+59b0889 docs: CLAUDE.md 瘦身為操作速查卡
+261eaea docs: 標記 mission/README.md 文件地圖的失效連結
+92de9f3 docs: 補充 architecture/ 現有文件 banner 偏差清單
+9c0c140 docs: 幽靈文件審查與歸檔
+```
+
+---
+
 ## 2025/11/19 - 會議決議與策略調整
 
 ### 決議摘要

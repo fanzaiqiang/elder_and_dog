@@ -1,26 +1,31 @@
-# ROS2 介面契約 v1.0
+# ROS2 介面契約 v2.0
 
-**文件定位**：PawAI 系統 ROS2 Topic/Action/Service 介面規格  
-**適用範圍**：Layer 1-3 所有模組  
-**版本**：v1.0（凍結）  
-**凍結日期**：2026-03-09
+**文件定位**：PawAI 系統 ROS2 Topic/Action/Service 介面規格
+**適用範圍**：Layer 1-3 所有模組
+**版本**：v2.0
+**凍結日期**：2026-03-13
+**對齊來源**：[mission/README.md](../mission/README.md) v2.0、[event-schema.md](../Pawai-studio/event-schema.md) v1.0
+
+> **v2.0 變更摘要**：
+> - `/event/face_detected` → `/event/face_identity`（4 種 event_type）
+> - `/state/perception/face` 欄位對齊實作（`stable_name` / `sim` / `mode`）
+> - 新增 `/state/interaction/speech`、`/state/executive/brain` 完整 schema
+> - 新增 P1 topics：`/event/gesture_detected`、`/event/pose_detected`
+> - `/event/speech_intent` → `/event/speech_intent_recognized`（對齊現有程式碼）
 
 ---
 
 ## 1. 介面凍結規則
 
-### 1.1 不可變更項目（3/9 後凍結）
+### 1.1 不可變更項目（v2.0 凍結後）
 
-以下項目已凍結，變更需經 System Architect 核准：
+變更需經 System Architect 核准：
 
 - ✅ Topic 名稱與路徑
-- ✅ Message schema（欄位名稱、型別、順序）
-- ✅ Action/Service 名稱
-- ✅ 常數 enum 值（Skill ID、Event Type 等）
+- ✅ Message schema（欄位名稱、型別）
+- ✅ 常數 enum 值（event_type、Skill ID 等）
 
 ### 1.2 可調整項目（內部實作）
-
-以下項目可在各模組內部調整：
 
 - 🔄 演算法實作細節
 - 🔄 閾值與參數預設值
@@ -29,61 +34,46 @@
 
 ---
 
-## 2. Topic 介面
+## 2. Topic 總覽
 
-### 2.1 Face Perception Topics
+| Topic | 類型 | 頻率 | 說明 |
+|-------|------|------|------|
+| `/state/perception/face` | State | 10 Hz | 人臉追蹤狀態 |
+| `/state/interaction/speech` | State | 5 Hz | 語音管線狀態 |
+| `/state/executive/brain` | State | 2 Hz | 大腦決策狀態 |
+| `/event/face_identity` | Event | 觸發式 | 人臉身份事件 |
+| `/event/speech_intent_recognized` | Event | 觸發式 | 語音意圖事件 |
+| `/event/gesture_detected` | Event | 觸發式 | 手勢事件（P1） |
+| `/event/pose_detected` | Event | 觸發式 | 姿勢事件（P1） |
+| `/tts` | Command | 觸發式 | TTS 輸入文字 |
+| `/webrtc_req` | Command | 觸發式 | Go2 WebRTC 命令 |
 
-#### `/state/perception/face`
+---
 
-**說明**：人臉追蹤狀態（持續發布）  
-**發布頻率**：10 Hz  
-**QoS**：Reliable, depth=10
+## 3. State Topics
 
+### 3.1 `/state/perception/face`
+
+**說明**：人臉追蹤狀態（持續發布）
+**發布者**：`face_identity_node`（現為 `scripts/face_identity_infer_cv.py`）
+**發布頻率**：10 Hz
+**QoS**：Reliable, Volatile, depth=10
 **Message Type**：`std_msgs/String` (JSON)
 
 **Schema**：
 ```json
 {
-  "stamp": {
-    "type": "float",
-    "unit": "seconds (Unix timestamp)",
-    "description": "訊息時間戳"
-  },
-  "count": {
-    "type": "int",
-    "description": "當前追蹤的人臉數量"
-  },
+  "stamp":      { "type": "float",  "unit": "seconds (Unix timestamp)" },
+  "face_count": { "type": "int",    "description": "當前追蹤人數" },
   "tracks": {
     "type": "array",
     "items": {
-      "track_id": {
-        "type": "int",
-        "description": "Session-level 追蹤 ID"
-      },
-      "bbox": {
-        "type": "array[4]",
-        "items": "int",
-        "description": "邊界框 [x1, y1, x2, y2]"
-      },
-      "confidence": {
-        "type": "float",
-        "range": "[0.0, 1.0]",
-        "description": "偵測置信度"
-      },
-      "distance_m": {
-        "type": "float | null",
-        "unit": "meters",
-        "description": "深度距離，無深度時為 null"
-      },
-      "person_name": {
-        "type": "string | undefined",
-        "description": "識別姓名（僅在啟用 SFace 時）"
-      },
-      "person_confidence": {
-        "type": "float | undefined",
-        "range": "[0.0, 1.0]",
-        "description": "識別置信度"
-      }
+      "track_id":    { "type": "int",            "description": "Session-level 追蹤 ID" },
+      "stable_name": { "type": "string",         "description": "穩定化後的身份名稱（unknown 表示未識別）" },
+      "sim":         { "type": "float",          "range": "[0.0, 1.0]", "description": "SFace 相似度分數" },
+      "distance_m":  { "type": "float | null",   "unit": "meters", "description": "深度距離，無深度時 null" },
+      "bbox":        { "type": "array[4]",       "items": "int", "description": "邊界框 [x1, y1, x2, y2]" },
+      "mode":        { "type": "string",         "enum": ["stable", "hold"], "description": "stable=已穩定, hold=尚在判定中" }
     }
   }
 }
@@ -92,128 +82,327 @@
 **範例**：
 ```json
 {
-  "stamp": 1709823456.789,
-  "count": 2,
+  "stamp": 1773561600.789,
+  "face_count": 2,
   "tracks": [
     {
       "track_id": 1,
-      "bbox": [100, 150, 200, 280],
-      "confidence": 0.95,
+      "stable_name": "Roy",
+      "sim": 0.42,
       "distance_m": 1.25,
-      "person_name": "張先生",
-      "person_confidence": 0.87
+      "bbox": [100, 150, 200, 280],
+      "mode": "stable"
     },
     {
       "track_id": 2,
+      "stable_name": "unknown",
+      "sim": 0.18,
+      "distance_m": 2.1,
       "bbox": [300, 180, 380, 300],
-      "confidence": 0.87,
-      "distance_m": 2.1
+      "mode": "hold"
     }
   ]
 }
 ```
 
+**欄位說明**：
+- `stable_name`：經 Hysteresis 穩定化後的名稱（`stable_hits=3`，`sim_threshold_upper=0.35` / `lower=0.25`）
+- `mode`：`stable` 表示已過穩定化閾值；`hold` 表示追蹤中但尚未達穩定條件
+- `sim`：SFace cosine similarity 原始分數，非二值化結果
+
 ---
 
-#### `/event/face_detected`
+### 3.2 `/state/interaction/speech`
 
-**說明**：人臉偵測事件（觸發式發布）  
-**發布時機**：
-- 新的人臉進入畫面
-- 間隔 `event_interval_sec` 秒後再次發布
-
+**說明**：語音管線狀態（持續發布）
+**發布者**：`stt_intent_node`
+**發布頻率**：5 Hz
+**QoS**：Reliable, Volatile, depth=10
 **Message Type**：`std_msgs/String` (JSON)
 
 **Schema**：
 ```json
 {
-  "stamp": {
-    "type": "float",
-    "unit": "seconds"
-  },
-  "event_type": {
-    "type": "string",
-    "enum": ["detected"],
-    "description": "事件類型"
-  },
-  "track": {
-    "type": "object",
-    "properties": {
-      "track_id": "int",
-      "bbox": "array[4]",
-      "confidence": "float",
-      "distance_m": "float | null"
-    }
-  }
+  "stamp":            { "type": "float" },
+  "phase":            { "type": "string", "enum": [
+                          "idle_wakeword", "wake_ack", "loading_local_stack",
+                          "listening", "transcribing", "local_asr_done",
+                          "cloud_brain_pending", "speaking", "keep_alive", "unloading"
+                        ],
+                        "description": "語音狀態機當前階段" },
+  "last_asr_text":    { "type": "string",   "description": "最近一次 ASR 文字" },
+  "last_intent":      { "type": "string",   "description": "最近一次 Intent 標籤" },
+  "models_loaded":    { "type": "array",    "items": "string",
+                        "description": "當前已載入的模型 e.g. [\"kws\", \"asr\", \"tts\"]" }
 }
 ```
 
 **範例**：
 ```json
 {
-  "stamp": 1709823456.789,
-  "event_type": "detected",
-  "track": {
-    "track_id": 1,
-    "bbox": [100, 150, 200, 280],
-    "confidence": 0.95,
-    "distance_m": 1.25
-  }
+  "stamp": 1773561602.123,
+  "phase": "listening",
+  "last_asr_text": "你好",
+  "last_intent": "greet",
+  "models_loaded": ["kws", "asr", "tts"]
+}
+```
+
+**狀態機流程**：
+```
+idle_wakeword → wake_ack → loading_local_stack → listening
+  → transcribing → local_asr_done → cloud_brain_pending
+  → speaking → keep_alive → idle_wakeword
+  → (卸載) → unloading → idle_wakeword
+```
+
+---
+
+### 3.3 `/state/executive/brain`
+
+**說明**：大腦決策狀態（持續發布）
+**發布者**：`interaction_executive_node`
+**發布頻率**：2 Hz
+**QoS**：Reliable, Volatile, depth=10
+**Message Type**：`std_msgs/String` (JSON)
+
+**Schema**：
+```json
+{
+  "stamp":                  { "type": "float" },
+  "executive_state":        { "type": "string", "enum": ["idle", "observing", "deciding", "executing", "speaking"] },
+  "current_intent":         { "type": "string | null", "description": "當前判定的意圖" },
+  "selected_skill":         { "type": "string | null", "description": "當前執行的技能" },
+  "degradation_level":      { "type": "int",    "range": "[0, 3]", "description": "降級等級" },
+  "active_tracks":          { "type": "int",    "description": "追蹤中的人臉數" },
+  "cloud_connected":        { "type": "bool",   "description": "雲端 LLM 是否可用" },
+  "last_decision_reason":   { "type": "string", "description": "最近決策理由（trace）" }
+}
+```
+
+**範例**：
+```json
+{
+  "stamp": 1773561603.456,
+  "executive_state": "executing",
+  "current_intent": "greet",
+  "selected_skill": "hello",
+  "degradation_level": 0,
+  "active_tracks": 1,
+  "cloud_connected": true,
+  "last_decision_reason": "cloud_brain: Roy detected at 1.4m, greeting appropriate"
+}
+```
+
+**降級等級對照**：
+
+| Level | 名稱 | Brain 實作 |
+|:-----:|------|-----------|
+| 0 | 雲端完整 | CloudBrain (Qwen3.5-9B/27B) |
+| 1 | 本地 LLM | LocalBrain (Qwen3.5-0.8B INT4) |
+| 2 | 規則模式 | RuleBrain (Intent → Task → Skill) |
+| 3 | 最小保底 | MinimalBrain (stop/greet/bye only) |
+
+---
+
+## 4. Event Topics
+
+### 4.1 `/event/face_identity`
+
+**說明**：人臉身份事件（條件觸發）
+**發布者**：`face_identity_node`
+**QoS**：Reliable, Volatile, depth=10
+**Message Type**：`std_msgs/String` (JSON)
+
+**Schema**：
+```json
+{
+  "stamp":       { "type": "float" },
+  "event_type":  { "type": "string", "enum": ["track_started", "identity_stable", "identity_changed", "track_lost"] },
+  "track_id":    { "type": "int" },
+  "stable_name": { "type": "string",       "description": "穩定化身份名稱" },
+  "sim":         { "type": "float",        "description": "相似度分數" },
+  "distance_m":  { "type": "float | null", "description": "深度距離" }
+}
+```
+
+**觸發規則**：
+
+| event_type | 觸發條件 |
+|-----------|----------|
+| `track_started` | 新 track_id 首次出現（IOU 未匹配到既有 track） |
+| `identity_stable` | Hysteresis 穩定化達到 `stable_hits` 閾值（`stable_name` 從 unknown → 具名） |
+| `identity_changed` | 同一 track_id 的 `stable_name` 變更（例如遮臉後重新辨識為不同人） |
+| `track_lost` | track 連續 `tracker_max_lost` 幀未匹配到任何偵測 |
+
+**範例**（identity_stable）：
+```json
+{
+  "stamp": 1773561601.500,
+  "event_type": "identity_stable",
+  "track_id": 1,
+  "stable_name": "Roy",
+  "sim": 0.42,
+  "distance_m": 1.25
+}
+```
+
+**範例**（track_lost）：
+```json
+{
+  "stamp": 1773561610.000,
+  "event_type": "track_lost",
+  "track_id": 1,
+  "stable_name": "Roy",
+  "sim": 0.0,
+  "distance_m": null
 }
 ```
 
 ---
 
-### 2.2 Control Topics
+### 4.2 `/event/speech_intent_recognized`
 
-#### `/webrtc_req`
+**說明**：語音意圖識別事件（觸發式）
+**發布者**：`stt_intent_node`
+**QoS**：Reliable, Volatile, depth=10
+**Message Type**：`std_msgs/String` (JSON)
 
-**說明**：Skill 執行請求（由 face_interaction 發布）  
+**Schema**：
+```json
+{
+  "stamp":       { "type": "float" },
+  "event_type":  { "type": "string", "enum": ["intent_recognized", "asr_result", "wake_word"] },
+  "intent":      { "type": "string | null", "description": "Intent 標籤（asr_result 時為 null）" },
+  "text":        { "type": "string",        "description": "ASR 原始文字" },
+  "confidence":  { "type": "float",         "range": "[0.0, 1.0]" },
+  "provider":    { "type": "string",        "description": "ASR provider e.g. whisper_local" }
+}
+```
+
+**觸發規則**：
+
+| event_type | 觸發條件 |
+|-----------|----------|
+| `wake_word` | Sherpa-onnx KWS 偵測到喚醒詞 |
+| `asr_result` | ASR 轉寫完成（不一定有 intent） |
+| `intent_recognized` | IntentClassifier 匹配到 intent |
+
+**範例**：
+```json
+{
+  "stamp": 1773561605.789,
+  "event_type": "intent_recognized",
+  "intent": "greet",
+  "text": "你好",
+  "confidence": 0.95,
+  "provider": "whisper_local"
+}
+```
+
+---
+
+### 4.3 `/event/gesture_detected`（P1）
+
+**說明**：手勢辨識事件（觸發式）
+**發布者**：`gesture_perception_node`（待實作）
+**QoS**：Reliable, Volatile, depth=10
+**Message Type**：`std_msgs/String` (JSON)
+
+**Schema**：
+```json
+{
+  "stamp":       { "type": "float" },
+  "event_type":  { "type": "string", "enum": ["gesture_detected"] },
+  "gesture":     { "type": "string", "enum": ["wave", "stop", "point", "ok"], "description": "手勢類型" },
+  "confidence":  { "type": "float",  "range": "[0.0, 1.0]" },
+  "hand":        { "type": "string", "enum": ["left", "right"] }
+}
+```
+
+---
+
+### 4.4 `/event/pose_detected`（P1）
+
+**說明**：姿勢辨識事件（觸發式）
+**發布者**：`pose_perception_node`（待實作）
+**QoS**：Reliable, Volatile, depth=10
+**Message Type**：`std_msgs/String` (JSON)
+
+**Schema**：
+```json
+{
+  "stamp":       { "type": "float" },
+  "event_type":  { "type": "string", "enum": ["pose_detected"] },
+  "pose":        { "type": "string", "enum": ["standing", "sitting", "crouching", "fallen"] },
+  "confidence":  { "type": "float",  "range": "[0.0, 1.0]" },
+  "track_id":    { "type": "int",    "description": "關聯的人臉 track_id（若可對應）" }
+}
+```
+
+---
+
+## 5. Command Topics
+
+### 5.1 `/webrtc_req`
+
+**說明**：Go2 WebRTC 命令（Skill 執行、音訊播放）
+**訂閱者**：`go2_driver_node`
 **Message Type**：`go2_interfaces/WebRtcReq`
 
 **Schema**：
 ```
 int64   id          # Message ID，0 表示自動分配
-string  topic       # WebRTC topic，固定 "rt/api/sport/request"
-int64   api_id      # Skill command ID
+string  topic       # WebRTC topic
+int64   api_id      # Skill command ID 或 audio api_id
 string  parameter   # JSON 參數或 command ID 字串
 uint8   priority    # 0=normal, 1=priority
 ```
 
-**範例**（Hello skill）：
+**常用 topic 值**：
+
+| topic | 用途 |
+|-------|------|
+| `rt/api/sport/request` | 運動指令 |
+| `rt/api/audiohub/request` | 音訊播放 |
+
+### 5.2 `/tts`
+
+**說明**：TTS 輸入文字
+**訂閱者**：`tts_node`
+**Message Type**：`std_msgs/String`
+
+**範例**：
 ```python
-req = WebRtcReq()
-req.id = 0
-req.topic = "rt/api/sport/request"
-req.api_id = 1016        # Hello
-req.parameter = "1016"   # Command ID as string
-req.priority = 0
+msg = String()
+msg.data = "哈囉，你好！"
+self.publisher.publish(msg)
 ```
 
 ---
 
-## 3. Skill 命令對照表
+## 6. Skill 命令對照表
 
-### 3.1 P0 安全動作
+### 6.1 P0 安全動作
 
 | Skill 名稱 | api_id | 參數 | 說明 | 安全等級 |
 |-----------|--------|------|------|----------|
-| `Hello` | 1016 | `"1016"` | 揮手打招呼 | 🟢 安全 |
-| `BalanceStand` | 1002 | `"1002"` | 平衡站立 | 🟢 安全 |
-| `Sit` | 1009 | `"1009"` | 坐下 | 🟢 安全 |
-| `RiseSit` | 1010 | `"1010"` | 起身坐下 | 🟢 安全 |
-| `StopMove` | 1003 | `"1003"` | 停止移動 | 🟢 安全 |
+| `Hello` | 1016 | `"1016"` | 揮手打招呼 | 安全 |
+| `BalanceStand` | 1002 | `"1002"` | 平衡站立 | 安全 |
+| `Sit` | 1009 | `"1009"` | 坐下 | 安全 |
+| `RiseSit` | 1010 | `"1010"` | 起身 | 安全 |
+| `StopMove` | 1003 | `"1003"` | 停止移動 | 安全 |
 
-### 3.2 P1 展示動作
+### 6.2 P1 展示動作
 
 | Skill 名稱 | api_id | 說明 | 安全等級 |
 |-----------|--------|------|----------|
-| `Stretch` | 1017 | 伸展 | 🟡 中等 |
-| `Content` | 1020 | 開心/滿足 | 🟢 安全 |
-| `FingerHeart` | 1036 | 比心 | 🟢 安全 |
-| `WiggleHips` | 1033 | 搖屁股 | 🟢 安全 |
+| `Stretch` | 1017 | 伸展 | 中等 |
+| `Content` | 1020 | 開心/滿足 | 安全 |
+| `FingerHeart` | 1036 | 比心 | 安全 |
+| `WiggleHips` | 1033 | 搖屁股 | 安全 |
 
-### 3.3 🔴 高風險動作（避免使用）
+### 6.3 高風險動作（禁止使用）
 
 | Skill 名稱 | api_id | 說明 | 風險 |
 |-----------|--------|------|------|
@@ -221,69 +410,122 @@ req.priority = 0
 | `FrontJump` | 1031 | 前跳 | 危險 |
 | `Handstand` | 1301 | 倒立 | 不穩定 |
 
+### 6.4 音訊播放指令（api_id）
+
+| api_id | 動作 | parameter |
+|--------|------|-----------|
+| 4004 | 設定音量 | `"80"` (0-100) |
+| 4001 | 開始播放 | `""` |
+| 4003 | 音訊資料塊 | `{"current_block_index":N, "total_block_number":M, "block_content":"base64..."}` |
+| 4002 | 停止播放 | `""` |
+
 **完整命令列表**：參見 `go2_robot_sdk/go2_robot_sdk/domain/constants/robot_commands.py`
 
 ---
 
-## 4. 參數規格
+## 7. 節點參數規格
 
-### 4.1 FacePerceptionNode 參數
+### 7.1 FaceIdentityNode 參數
 
-| 參數名 | 型別 | 預設值 | 範圍 | 說明 |
-|--------|------|--------|------|------|
-| `color_topic` | string | `/camera/camera/color/image_raw` | - | RGB 影像來源 |
-| `depth_topic` | string | `/camera/camera/aligned_depth_to_color/image_raw` | - | 深度影像來源 |
-| `yunet_model` | string | `/home/jetson/face_models/face_detection_yunet_2023mar.onnx` | - | YuNet 模型路徑 |
-| `sface_model` | string | `/home/jetson/face_models/face_recognition_sface_2021dec.onnx` | - | SFace 模型路徑 |
-| `face_db_model` | string | `/home/jetson/face_db/model_sface.pkl` | - | 人臉資料庫路徑 |
-| `enable_identity` | bool | `false` | - | 啟用身分識別 |
-| `identity_threshold` | float | `0.35` | [0.0, 1.0] | SFace 識別閾值 |
-| `event_interval_sec` | float | `2.0` | [0.5, 10.0] | 事件最小間隔 |
-| `tracker_iou_threshold` | float | `0.3` | [0.1, 0.9] | IOU 匹配閾值 |
-| `tracker_max_lost` | int | `10` | [1, 50] | 最大遺失幀數 |
+**現有實作**：`scripts/face_identity_infer_cv.py`
+**4/13 後回收為**：ROS2 package `face_perception`
 
-### 4.2 FaceInteractionNode 參數
+> 現為 argparse CLI 參數（`--xxx` 格式），4/13 後回收為 ROS2 `declare_parameter` 時保持同名。
 
-| 參數名 | 型別 | 預設值 | 範圍 | 說明 |
-|--------|------|--------|------|------|
-| `face_event_topic` | string | `/event/face_detected` | - | 事件訂閱 topic |
-| `webrtc_publish_topic` | string | `/webrtc_req` | - | Skill 發布 topic |
-| `webrtc_topic_name` | string | `rt/api/sport/request` | - | WebRTC topic |
-| `action_api_id` | int | `1016` | 有效 skill ID | Hello skill ID |
-| `action_parameter` | string | `"1016"` | - | Command ID 字串 |
-| `interaction_cooldown_sec` | float | `5.0` | [0.0, 60.0] | 互動冷卻時間 |
+#### 核心對外契約參數
+
+會直接影響 `/state/perception/face` 和 `/event/face_identity` 輸出行為的參數：
+
+| CLI 參數 | 型別 | 預設值 | 說明 |
+|----------|------|--------|------|
+| `--color-topic` | string | `/camera/camera/color/image_raw` | RGB 影像來源 |
+| `--depth-topic` | string | `/camera/camera/aligned_depth_to_color/image_raw` | 深度影像來源 |
+| `--model-path` | string | `/home/jetson/face_db/model_sface.pkl` | SFace 人臉資料庫路徑 |
+| `--db-dir` | string | `/home/jetson/face_db` | 人臉資料庫目錄 |
+| `--det-score-threshold` | float | `0.90` | YuNet 偵測閾值 |
+| `--sim-threshold-upper` | float | `0.35` | Hysteresis 上閾值 |
+| `--sim-threshold-lower` | float | `0.25` | Hysteresis 下閾值 |
+| `--stable-hits` | int | `3` | 穩定化所需連續命中幀數 |
+| `--track-iou-threshold` | float | `0.3` | IOU 匹配閾值 |
+| `--track-max-misses` | int | `10` | 最大遺失幀數 |
+| `--max-faces` | int | `5` | 最大同時追蹤人數 |
+| `--publish-fps` | float | `8.0` | 狀態發布幀率 |
+
+#### 實作 / 除錯參數
+
+不影響對外介面行為，僅影響內部偵測品質或除錯輸出：
+
+| CLI 參數 | 型別 | 預設值 | 說明 |
+|----------|------|--------|------|
+| `--yunet-model` | string | *(見原始碼)* | YuNet ONNX 模型路徑 |
+| `--sface-model` | string | *(見原始碼)* | SFace ONNX 模型路徑 |
+| `--det-nms-threshold` | float | `0.30` | YuNet NMS 閾值 |
+| `--det-top-k` | int | `5000` | YuNet 偵測候選框上限 |
+| `--unknown-grace-s` | float | `1.2` | 新 track 暫緩判 unknown 的寬限秒數 |
+| `--min-face-area-ratio` | float | `0.02` | 最小人臉面積佔比（過小忽略） |
+| `--tick-period` | float | `0.05` | 主迴圈 timer 週期（秒） |
+| `--no-publish-compare-image` | flag | `false` | 停止發布比對 debug 影像 |
+| `--headless` | flag | `false` | 無 GUI 模式（不顯示 cv2 視窗） |
+| `--save-debug-jpeg` | flag | `false` | 儲存 debug JPEG 到磁碟 |
+
+### 7.2 STTIntentNode 參數
+
+**實作**：`speech_processor/speech_processor/stt_intent_node.py`
+
+| 參數名 | 型別 | 預設值 | 說明 |
+|--------|------|--------|------|
+| `provider_order` | string[] | `["qwen_cloud", "whisper_local"]` | ASR provider 優先序 |
+| `input_device` | int | `-1` | ALSA 錄音裝置 index（-1 = 系統預設） |
+| `sample_rate` | int | `16000` | 目標取樣率 |
+| `capture_sample_rate` | int | `16000` | 麥克風原生取樣率（Jetson 實測需改 44100） |
+| `max_record_seconds` | float | `6.0` | 單次錄音最長秒數 |
+| `energy_vad.enabled` | bool | `true` | 是否啟用 Energy VAD |
+| `energy_vad.start_threshold` | float | `0.015` | Energy VAD 啟動閾值 |
+| `energy_vad.stop_threshold` | float | `0.01` | Energy VAD 停止閾值 |
+| `energy_vad.silence_duration_ms` | int | `800` | 靜音持續判定（毫秒） |
+| `energy_vad.min_speech_ms` | int | `300` | 最短語音段（毫秒） |
+
+> **注意**：Energy VAD 參數為 namespaced 格式。ROS2 啟動時指定方式：
+> ```bash
+> ros2 run speech_processor stt_intent_node --ros-args \
+>   -p energy_vad.start_threshold:=0.10 \
+>   -p energy_vad.silence_duration_ms:=450
+> ```
+> 使用者在 Jetson 上實測調整過的值（`start=0.10, stop=0.03, silence=450, min_speech=900`）與程式碼預設值不同，部署時需覆蓋。
 
 ---
 
-## 5. QoS 規格
+## 8. QoS 規格
 
-### 5.1 State Topics
+### 8.1 State Topics
 
-| Topic | Reliability | Durability | Depth | 說明 |
+| Topic | Reliability | Durability | Depth | 頻率 |
 |-------|-------------|------------|-------|------|
-| `/state/perception/face` | Reliable | Volatile | 10 | 需確保接收 |
-| `/state/interaction/speech` | Reliable | Volatile | 10 | 需確保接收 |
-| `/state/executive/brain` | Reliable | Volatile | 10 | 需確保接收 |
+| `/state/perception/face` | Reliable | Volatile | 10 | 10 Hz |
+| `/state/interaction/speech` | Reliable | Volatile | 10 | 5 Hz |
+| `/state/executive/brain` | Reliable | Volatile | 10 | 2 Hz |
 
-### 5.2 Event Topics
+### 8.2 Event Topics
 
-| Topic | Reliability | Durability | Depth | 說明 |
-|-------|-------------|------------|-------|------|
-| `/event/face_detected` | Reliable | Volatile | 10 | 事件不可遺失 |
-| `/event/speech_intent` | Reliable | Volatile | 10 | 事件不可遺失 |
+| Topic | Reliability | Durability | Depth |
+|-------|-------------|------------|-------|
+| `/event/face_identity` | Reliable | Volatile | 10 |
+| `/event/speech_intent_recognized` | Reliable | Volatile | 10 |
+| `/event/gesture_detected` | Reliable | Volatile | 10 |
+| `/event/pose_detected` | Reliable | Volatile | 10 |
 
-### 5.3 Control Topics
+### 8.3 Command Topics
 
-| Topic | Reliability | Durability | Depth | 說明 |
-|-------|-------------|------------|-------|------|
-| `/webrtc_req` | Reliable | Volatile | 10 | 命令需確保送達 |
-| `/cmd_vel` | Reliable | Volatile | 10 | 運動命令 |
+| Topic | Reliability | Durability | Depth |
+|-------|-------------|------------|-------|
+| `/webrtc_req` | Reliable | Volatile | 10 |
+| `/tts` | Reliable | Volatile | 10 |
 
 ---
 
-## 6. 錯誤處理
+## 9. 錯誤處理
 
-### 6.1 無效訊息處理
+### 9.1 無效訊息處理
 
 接收方應該：
 1. 驗證 JSON schema
@@ -297,37 +539,40 @@ except json.JSONDecodeError:
     self.get_logger().warning("Ignore invalid JSON")
     return
 
-# 驗證必要欄位
-if "stamp" not in payload or "track" not in payload:
-    self.get_logger().warning("Missing required fields")
+# 驗證必要欄位（以 face_identity 為例）
+required = {"stamp", "event_type", "track_id"}
+if not required.issubset(payload.keys()):
+    self.get_logger().warning(f"Missing required fields: {required - payload.keys()}")
     return
 ```
 
-### 6.2 超時處理
+### 9.2 超時處理
 
 | 情境 | 超時時間 | 行為 |
 |------|----------|------|
 | Skill 執行 | 10 秒 | 記錄錯誤，不回應 |
 | State 更新 | 2 秒 | 標記為 stale |
 | Event 處理 | 1 秒 | 丟棄過期事件 |
+| 雲端 LLM 回應 | 3 秒 | fallback 到下一級 Brain |
 
 ---
 
-## 7. 版本歷史
+## 10. 版本歷史
 
 | 版本 | 日期 | 變更內容 | 作者 |
 |------|------|----------|------|
 | v1.0 | 2026-03-09 | 介面凍結 | System Architect |
+| v2.0 | 2026-03-13 | 對齊 mission v2.0：face_identity 事件、speech/brain state schema、P1 topics | System Architect |
 
 ---
 
-## 8. 相關文件
+## 11. 相關文件
 
-- [mission/README.md](../mission/README.md) - 專案總覽
-- [face_perception.md](./face_perception.md) - 人臉模組架構
-- [data_flow.md](./data_flow.md) - 資料流說明
+- [mission/README.md](../mission/README.md) — 專案總覽與功能閉環設計
+- [Pawai-studio/event-schema.md](../Pawai-studio/event-schema.md) — Studio Gateway JSON schema（WebSocket 層）
+- [Pawai-studio/brain-adapter.md](../Pawai-studio/brain-adapter.md) — Brain Adapter 介面與四級降級
 
 ---
 
-*維護者：System Architect*  
-*狀態：v1.0 凍結*
+*維護者：System Architect*
+*狀態：v2.0 凍結*

@@ -45,7 +45,7 @@ python mock_server.py
 
 | 日期 | 交付定義 |
 |------|---------|
-| **3/16** | 能看、能 review — stub + 基本 UI + mock props + 4 種狀態 |
+| **3/16** | 能看、能 review — stub + 基本 UI + store-based mock data + 4 種狀態 |
 | **3/23** | 可 demo — 完整視覺 + mock 資料即時更新 + 互動 |
 | **4/6** | 整合穩定 — Panel 正確反映真實 Gateway 資料 + 邊界 case |
 | **4/13** | 展示版 freeze — 只修 bug |

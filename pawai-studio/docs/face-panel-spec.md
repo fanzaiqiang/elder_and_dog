@@ -1,215 +1,193 @@
-# FacePanel Spec — 人臉辨識面板
+# Face Panel Spec
 
-**負責人**：鄔
-**版本**：v1.0
-**建立日期**：2026-03-14
-**真相來源**：`docs/Pawai-studio/event-schema.md`（若與本文件衝突，以 event-schema.md 為準）
-
----
-
-## 目標
-
-顯示即時人臉辨識結果：誰在鏡頭前、距離多遠、辨識信心度、追蹤狀態。
+> 真相來源：[../../docs/Pawai-studio/event-schema.md](../../docs/Pawai-studio/event-schema.md) §2.1 FaceState / §1.2 FaceIdentityEvent
+> 參考實作：[../frontend/components/chat/chat-panel.tsx](../frontend/components/chat/chat-panel.tsx)
+> Design Tokens：[design-tokens.md](design-tokens.md)
 
 ---
 
-## Props 介面
+## 1. 目標
+
+即時顯示人臉辨識結果：身份名稱、相似度、距離、追蹤狀態（stable/hold）、多人列表。
+
+---
+
+## 2. 檔案範圍
+
+### 可以改
+- `frontend/components/face/face-panel.tsx`
+- `frontend/components/face/` 下新增的子元件（例如 `face-track-card.tsx`）
+
+### 不可以改（改了 PR 會被退）
+- `frontend/contracts/types.ts`
+- `frontend/stores/*`
+- `frontend/hooks/*`
+- `frontend/components/layout/*`
+- `frontend/components/chat/*`
+- 其他人的 `frontend/components/speech/`、`gesture/`、`pose/`
+
+### 不得直接修改現有 shared 元件；若需新增或擴充，先提 Issue
+- `frontend/components/shared/*`
+
+---
+
+## 3. Store Selectors 與使用型別
+
+Panel 不接收 props，從 Zustand store 取資料：
 
 ```typescript
-interface FacePanelProps {
-  data: FaceState;                    // 即時狀態（10Hz 更新）
-  events: FaceIdentityEvent[];        // 歷史事件列表
-}
+import { useStateStore } from '@/stores/state-store'
+import { useEventStore } from '@/stores/event-store'
+import type { FaceState, FaceTrack, FaceIdentityEvent } from '@/contracts/types'
 
-// 來自 contracts/types.ts
-interface FaceState {
-  stamp: number;
-  face_count: number;
-  tracks: FaceTrack[];
-}
-
-interface FaceTrack {
-  track_id: number;
-  stable_name: string;      // 身份名稱，"unknown" 表示未識別
-  sim: number;               // 相似度 [0.0, 1.0]
-  distance_m: number | null; // 距離（公尺），null 表示無深度
-  bbox: [number, number, number, number]; // [x1, y1, x2, y2]
-  mode: "stable" | "hold";  // stable=已穩定, hold=判定中
-}
-
-interface FaceIdentityEvent {
-  id: string;
-  timestamp: string;
-  source: "face";
-  event_type: "track_started" | "identity_stable" | "identity_changed" | "track_lost";
-  data: {
-    track_id: number;
-    stable_name: string;
-    sim: number;
-    distance_m: number | null;
-  };
-}
+// 在元件內：
+const faceState = useStateStore((s) => s.faceState)
+const events = useEventStore((s) => s.events.filter((e) => e.source === 'face'))
 ```
 
 ---
 
-## 資料來源
+## 4. Mock Data
 
-| 資料 | 來源 Topic | 更新頻率 |
-|------|-----------|---------|
-| FaceState | `/state/perception/face` | 10 Hz |
-| FaceIdentityEvent | `/event/face_identity` | 條件觸發 |
+開發時直接用這些假資料測試 UI：
 
----
-
-## 必做元件
-
-### 1. 追蹤人物卡片（主體）
-
-每個被追蹤的人顯示一張卡片：
-
-```
-┌─────────────────────────────────┐
-│ 👤 小明                   stable │  ← stable_name + StatusBadge(mode)
-│                                 │
-│  信心度  92%        距離  1.2m  │  ← MetricChip x2
-│  Track #3                      │  ← track_id
-└─────────────────────────────────┘
-```
-
-- `mode: "stable"` → 綠色 StatusBadge
-- `mode: "hold"` → 黃色 StatusBadge
-- `stable_name: "unknown"` → 顯示「未識別」+ 灰色頭像
-- 多人時，卡片垂直排列
-
-### 2. 空狀態
-
-無人臉時顯示：
-- 圖示（Lucide: `UserX` 或 `ScanFace`）
-- 文字：「尚未偵測到人臉」
-- 次要文字：「請走到攝影機前方」
-
-### 3. 人臉計數
-
-Panel 標題旁顯示當前人數：
-```
-人臉辨識 (2)     ● Live
-```
-
-### 4. 事件歷史（可選，加分項）
-
-底部可收合區域，顯示最近 10 筆 FaceIdentityEvent：
-```
-14:32:05  identity_stable  小明 (92%)
-14:32:01  track_started    Track #3
-14:31:58  track_lost       Track #2
-```
-使用 `EventItem` 共用元件。
-
----
-
-## 互動規則
-
-| 互動 | 行為 |
-|------|------|
-| 人物卡片 hover | `surface-hover` 背景 + 微微放大 (scale 1.01) |
-| 信心度變化 | 數字有 transition 動畫（300ms） |
-| 新人出現 | 卡片從右滑入（200ms） |
-| 人離開 | 卡片淡出（200ms），延遲 2s 後移除 |
-| mode 切換 | StatusBadge 顏色漸變（150ms） |
-
----
-
-## Design Tokens 參考
-
-見 `design-tokens.md`。必須使用：
-- `PanelCard` 作為外層容器
-- `StatusBadge` 顯示 mode
-- `MetricChip` 顯示 sim 和 distance_m
-- `LiveIndicator` 顯示即時狀態
-
----
-
-## Mock 資料範例
-
-### FaceState（有人）
-
-```json
-{
-  "stamp": 1710400325.123,
-  "face_count": 2,
-  "tracks": [
+```typescript
+const MOCK_FACE_STATE: FaceState = {
+  stamp: 1773561600.789,
+  face_count: 2,
+  tracks: [
     {
-      "track_id": 3,
-      "stable_name": "小明",
-      "sim": 0.92,
-      "distance_m": 1.2,
-      "bbox": [120, 80, 280, 320],
-      "mode": "stable"
+      track_id: 1,
+      stable_name: 'Roy',
+      sim: 0.42,
+      distance_m: 1.25,
+      bbox: [100, 150, 200, 280],
+      mode: 'stable',
     },
     {
-      "track_id": 5,
-      "stable_name": "unknown",
-      "sim": 0.15,
-      "distance_m": 2.8,
-      "bbox": [400, 100, 520, 300],
-      "mode": "hold"
-    }
-  ]
+      track_id: 2,
+      stable_name: 'unknown',
+      sim: 0.18,
+      distance_m: 2.1,
+      bbox: [300, 180, 380, 300],
+      mode: 'hold',
+    },
+  ],
 }
-```
 
-### FaceState（無人）
-
-```json
-{
-  "stamp": 1710400330.456,
-  "face_count": 0,
-  "tracks": []
+const MOCK_FACE_EVENT: FaceIdentityEvent = {
+  id: 'evt-face-001',
+  timestamp: '2026-03-14T10:00:01.500+08:00',
+  source: 'face',
+  event_type: 'identity_stable',
+  data: {
+    track_id: 1,
+    stable_name: 'Roy',
+    sim: 0.42,
+    distance_m: 1.25,
+  },
 }
-```
 
-### FaceIdentityEvent
-
-```json
-{
-  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-  "timestamp": "2026-03-14T14:32:05.123+08:00",
-  "source": "face",
-  "event_type": "identity_stable",
-  "data": {
-    "track_id": 3,
-    "stable_name": "小明",
-    "sim": 0.92,
-    "distance_m": 1.2
-  }
+const MOCK_EMPTY_STATE: FaceState = {
+  stamp: 0,
+  face_count: 0,
+  tracks: [],
 }
 ```
 
 ---
 
-## 驗收標準
+## 5. UI 結構
 
-- [ ] 使用 `PanelCard` 包裹，標題顯示「人臉辨識」+ 人數 + LiveIndicator
-- [ ] 顯示 stable_name、sim（百分比格式）、distance_m（帶單位）
-- [ ] 多人追蹤時顯示多張卡片
-- [ ] `mode=stable` 綠色 badge，`mode=hold` 黃色 badge
-- [ ] `stable_name="unknown"` 顯示「未識別」
-- [ ] 無人臉時顯示空狀態（圖示 + 提示文字）
-- [ ] 遵守 design-tokens.md 的色板與圓角
-- [ ] props 變化時有 transition 動畫（150-300ms）
-- [ ] 響應式：sidebar 寬度 360px 自適應
-- [ ] 接 Mock Server 資料可正常更新
+### 必要區塊
+
+```
+PanelCard (icon=User, title="人臉辨識", count=face_count)
+├── [若 face_count > 0] 追蹤人物列表
+│   └── 每個 FaceTrack 一張卡片：
+│       ├── stable_name（粗體）
+│       ├── 相似度 bar（MetricChip, value=sim, unit="%", 乘100顯示）
+│       ├── 距離（MetricChip, value=distance_m, unit="m"）
+│       ├── mode badge（stable=綠/hold=黃）
+│       └── track_id（小字灰色）
+├── [若 face_count === 0] 空狀態
+│   └── 圖示 + "尚未偵測到人臉"
+└── [可選/M2] 事件歷史（最近 10 筆 FaceIdentityEvent）
+    └── EventItem 列表
+```
+
+### 狀態矩陣
+
+| 狀態 | 條件 | 顯示內容 | StatusBadge |
+|------|------|---------|-------------|
+| 正常運作 | `face_count > 0` | 追蹤人物列表 | `active` |
+| 載入中 | `faceState === null` | "正在連線..." | `loading` |
+| 無資料 | `face_count === 0` | "尚未偵測到人臉" 空狀態 | `inactive` |
+| 錯誤 | store 連線失敗（由上層處理） | "人臉模組離線" | `error` |
+
+### 響應式
+- sidebar 寬度：固定 360px（以 design-tokens.md 為準）
+- main area：自適應
+- 不需要做 mobile layout
 
 ---
 
-## 不要做的事
+## 6. 互動規則
 
-- 不要處理 WebSocket 連線（已由 hooks 處理，你只接 props）
-- 不要自己定義顏色（用 design tokens）
-- 不要做攝影機影像顯示（那是 CameraPanel，不是你的範圍）
-- 不要做 layout 切換邏輯（LayoutOrchestrator 會處理）
+- **人物卡片 hover**：背景色加深 `var(--surface-hover)`，transition 150ms
+- **新追蹤人物出現**：slide-in 動畫 200ms
+- **track_lost 後**：短暫保留後淡出（實作預設 5s，可調）
+- **相似度 bar**：數值變化時 transition 300ms
+- **mode 切換（hold → stable）**：badge 顏色 transition 150ms
 
 ---
 
-*最後更新：2026-03-14*
+## 7. 參考來源
+
+| 需求 | 看哪裡 |
+|------|--------|
+| FaceState / FaceTrack / FaceIdentityEvent 欄位 | [../../docs/Pawai-studio/event-schema.md](../../docs/Pawai-studio/event-schema.md) §2.1 + §1.2 |
+| 色彩 / 字體 / 間距 | [design-tokens.md](design-tokens.md) |
+| PanelCard 用法 | `frontend/components/shared/panel-card.tsx` |
+| StatusBadge 用法 | `frontend/components/shared/status-badge.tsx` |
+| MetricChip 用法 | `frontend/components/shared/metric-chip.tsx` |
+| EventItem 用法 | `frontend/components/shared/event-item.tsx` |
+| 完整 Panel 範例 | `frontend/components/chat/chat-panel.tsx` |
+
+---
+
+## 8. Milestones
+
+### M1（3/16）：能看、能 review
+- [ ] `PanelCard` 包裹，icon=`User`，title="人臉辨識"
+- [ ] 用 `MOCK_FACE_STATE` 顯示 1-2 個追蹤人物卡片
+- [ ] `face_count` 顯示在 PanelCard 的 count prop
+- [ ] 4 種狀態（active / loading / inactive / error）都有對應畫面
+- [ ] `npm run lint` + `npm run build` 通過
+
+### M2（3/23）：可 demo 的前端版本
+- [ ] Panel 能正確反映由 store 注入的 mock 資料更新
+- [ ] 多人追蹤列表（≥2 人）正常顯示
+- [ ] 相似度 bar + 距離 MetricChip 視覺完成
+- [ ] mode badge（stable 綠 / hold 黃）正確
+- [ ] 空狀態、loading 狀態有意義的 UI
+- [ ] hover / slide-in / 淡出動畫符合 design-tokens.md
+- [ ] 事件歷史列表（最近 10 筆）
+- [ ] `npm run lint` + `npm run build` 通過
+
+### M3（4/6）：整合穩定版
+- [ ] Panel 能正確反映由 store 注入的真實 Gateway 資料
+- [ ] 處理邊界 case（缺欄位、格式異常、track 快速增減）
+- [ ] 與其他 Panel 共存不衝突（Chat + 2 panels）
+- [ ] 5 分鐘無當機 soak test
+- [ ] `npm run lint` + `npm run build` 通過
+
+---
+
+## 9. Out of Scope（不要做）
+
+- 不要自己加新的 shared component（先提 Issue）
+- 不要改 layout 邏輯
+- 不要加 Panel 之間的直接通訊
+- 不要引入新的 npm 依賴（除非先提 Issue）
+- 不要實作 bbox 繪製或影像 overlay（那是 CameraPanel 的事）

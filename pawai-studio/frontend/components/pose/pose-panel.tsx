@@ -1,23 +1,32 @@
-"use client"
+'use client'
 
-import { PersonStanding } from "lucide-react"
-import { PanelCard } from "@/components/shared/panel-card"
-import type { PoseState, PoseEvent } from "@/contracts/types"
+import { Activity } from 'lucide-react'
+import { PanelCard } from '@/components/shared/panel-card'
+import { useStateStore } from '@/stores/state-store'
+import { useEventStore } from '@/stores/event-store'
+import type { PoseState } from '@/contracts/types'
 
-interface PosePanelProps {
-  data: PoseState
-  events: PoseEvent[]
-}
+export function PosePanel() {
+  const poseState = useStateStore((s) => s.poseState) as PoseState | null
+  const events = useEventStore((s) => s.events.filter((e) => e.source === 'pose'))
 
-export function PosePanel({ data, events }: PosePanelProps) {
+  const status = !poseState
+    ? 'loading' as const
+    : poseState.current_pose === 'fallen'
+      ? 'error' as const
+      : poseState.active
+        ? 'active' as const
+        : 'inactive' as const
+
   return (
     <PanelCard
       title="姿勢辨識"
-      icon={<PersonStanding className="h-4 w-4" />}
-      status={data.active ? "active" : "inactive"}
+      icon={<Activity className="h-4 w-4" />}
+      status={status}
     >
-      <div className="flex items-center justify-center h-32 text-[#55556A] text-sm">
-        <p>TODO: 負責實作（見 pose-panel-spec.md）</p>
+      {/* TODO: 楊 — 看 docs/pose-panel-spec.md 實作 */}
+      <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
+        待實作 — 參考 pose-panel-spec.md
       </div>
     </PanelCard>
   )

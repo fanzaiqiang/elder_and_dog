@@ -1,23 +1,30 @@
-"use client"
+'use client'
 
-import { Hand } from "lucide-react"
-import { PanelCard } from "@/components/shared/panel-card"
-import type { GestureState, GestureEvent } from "@/contracts/types"
+import { Hand } from 'lucide-react'
+import { PanelCard } from '@/components/shared/panel-card'
+import { useStateStore } from '@/stores/state-store'
+import { useEventStore } from '@/stores/event-store'
+import type { GestureState } from '@/contracts/types'
 
-interface GesturePanelProps {
-  data: GestureState
-  events: GestureEvent[]
-}
+export function GesturePanel() {
+  const gestureState = useStateStore((s) => s.gestureState) as GestureState | null
+  const events = useEventStore((s) => s.events.filter((e) => e.source === 'gesture'))
 
-export function GesturePanel({ data, events }: GesturePanelProps) {
+  const status = !gestureState
+    ? 'loading' as const
+    : gestureState.active
+      ? 'active' as const
+      : 'inactive' as const
+
   return (
     <PanelCard
       title="手勢辨識"
       icon={<Hand className="h-4 w-4" />}
-      status={data.active ? "active" : "inactive"}
+      status={status}
     >
-      <div className="flex items-center justify-center h-32 text-[#55556A] text-sm">
-        <p>TODO: 負責實作（見 gesture-panel-spec.md）</p>
+      {/* TODO: 黃 — 看 docs/gesture-panel-spec.md 實作 */}
+      <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
+        待實作 — 參考 gesture-panel-spec.md
       </div>
     </PanelCard>
   )

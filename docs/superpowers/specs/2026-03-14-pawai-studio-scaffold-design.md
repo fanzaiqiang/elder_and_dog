@@ -47,7 +47,7 @@
 ```bash
 # .env.development（Mock 模式）
 NEXT_PUBLIC_GATEWAY_URL=http://localhost:8001
-NEXT_PUBLIC_WS_URL=ws://localhost:8001/ws
+NEXT_PUBLIC_WS_URL=ws://localhost:8001/ws/events
 DATA_SOURCE=mock
 ```
 
@@ -101,7 +101,7 @@ pawai-studio/
 ├── backend/
 │   ├── gateway.py                  # Studio Gateway（REST + WebSocket）
 │   ├── mock_server.py              # Mock Event Server（假資料 + 場景重播）
-│   ├── schemas.py                  # Pydantic models（真相來源）
+│   ├── schemas.py                  # Pydantic models（對齊 event-schema.md）
 │   └── requirements.txt
 │
 └── docs/
@@ -258,13 +258,14 @@ Jetson 真機
 ### 8.1 型別產生鏈
 
 ```
-event-schema.md（真相來源）
+docs/Pawai-studio/event-schema.md（設計真相來源，唯一）
     ↓ 手動對齊
-backend/schemas.py（Pydantic models）
-    ↓ 產生
-frontend/contracts/types.ts（TS 型別）
+backend/schemas.py（Pydantic 實作對齊檔）
+    ↓ 手動對齊
+frontend/contracts/types.ts（TS 型別實作對齊檔）
 ```
 
+**真相來源只有一個：`event-schema.md`。** schemas.py 和 types.ts 都是它的鏡像。
 四人只需 import `contracts/types.ts`，不需要看 backend 或 event-schema.md。
 
 ### 8.2 Mock Server 規格

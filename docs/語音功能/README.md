@@ -59,6 +59,17 @@ ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.b
 
 ---
 
+## Jetson 麥克風注意事項
+
+- **HyperX SoloCast（4P5P8AA）** 硬體只支援 **stereo（2ch）** 錄音
+- `stt_intent_node` 必須用 `channels:=2`，callback 內手動取左聲道做 mono downmix
+- 不要用 `channels:=1`，Jetson PortAudio ALSA backend 的 auto-downmix 會撞 `-9985` / `-9998`
+- 驗證方式：`arecord -D hw:0,0 --dump-hw-params /dev/null 2>&1 | grep CHANNELS`
+
+> 詳見 `docs/語音功能/jetson-MVP測試.md` §15.5
+
+---
+
 ## 邊緣端 (Jetson 8GB) - 前端處理
 
 ### VAD (語音活動檢測)

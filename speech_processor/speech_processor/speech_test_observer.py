@@ -127,7 +127,8 @@ class SessionAggregator:
             r.asr_latency_ms = latency_ms
 
     def on_intent_event(self, session_id: str, intent: str,
-                        confidence: float, latency_ms: float, ts: float) -> None:
+                        confidence: float, latency_ms: float, ts: float,
+                        text: str = "") -> None:
         r = self._find_round_by_session(session_id)
         if not r:
             r = self._current_round()
@@ -150,6 +151,8 @@ class SessionAggregator:
             r.intent_ts = ts
             r.intent_confidence = confidence
             r.intent_latency_ms = latency_ms
+            if text and not r.asr_text:
+                r.asr_text = text
 
     def on_tts(self, text: str, ts: float) -> None:
         r = self._find_round_for_correlation(ts)
@@ -473,6 +476,7 @@ if _HAS_ROS2:
                 confidence=float(data.get("confidence", 0)),
                 latency_ms=float(data.get("latency_ms", 0)),
                 ts=time.time(),
+                text=data.get("text", ""),
             )
             r = self._aggregator._current_round()
             if r:

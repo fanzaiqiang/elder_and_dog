@@ -1769,6 +1769,29 @@ ros2 topic pub --once /tts std_msgs/msg/String '{data: "系統就緒"}'
 
 ---
 
-*最後更新：2026-03-12（踩坑總記錄與根因分析）*
+### 15.5 2026-03-14 進度更新（30 輪驗收框架建立）
+
+#### 今日完成
+
+- 建立 `speech_test_observer` ROS2 node，訂閱語音主線 topic 並自動聚合每輪時間戳（20 unit tests pass）
+- 建立 `test_scripts/speech_30round.yaml`（15 固定句 + 15 自由句測試定義）
+- 建立 `scripts/clean_speech_env.sh`（獨立環境清理，取代各啟動腳本的手動 kill）
+- 建立 `scripts/run_speech_test.sh`（一鍵 orchestration：clean → build → launch → warmup → 30 輪測試 → 報告生成）
+- Observer 輸出 CSV（逐輪原始紀錄）+ Summary JSON（含 PASS/MARGINAL/FAIL 評分）
+- Warmup 輪不進統計（observer 在 warmup 結束後才啟動）
+
+#### 設計決策
+
+- Observer 用 `/state/interaction/speech` 的 state 欄位變化偵測 round 邊界（`LISTENING→RECORDING` = speech_start，`RECORDING→TRANSCRIBING` = speech_end），因 no-VAD 主線不發布 `/event/speech_activity`
+- TTS / webrtc_req 用時序關聯（`tts_correlation_window_s` 預設 3.0s），因這些 topic 不帶 `session_id`
+- 控制面用 topic-based req/ack（不用 ROS2 service，避免自訂 .srv）
+
+#### 下一步
+
+- 在 Jetson 上跑第一輪小批次測試（3-5 輪 fixed rounds），驗 observer 工具鏈無誤
+- 確認無誤後跑完整 30 輪，回填 §15.1 測試結果表格
+- 根據 30 輪數據決定是否需要調整 energy VAD 參數或 intent 規則
+
+*最後更新：2026-03-14（30 輪驗收框架建立）*
 *適用專案：PawAI / elder_and_dog*
 *維護用途：Jetson MVP 語音功能測試與展示前驗收*

@@ -292,6 +292,51 @@ ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.b
 
 ---
 
+## 30 輪驗收工具（2026-03-14 新增）
+
+Phase 1-4 各自通過後，需要端到端可重複驗證。以下工具用於 30 輪統計測試。
+
+### 檔案索引
+
+| 檔案 | 用途 |
+|------|------|
+| `speech_processor/speech_processor/speech_test_observer.py` | Observer node：訂閱 topic、聚合 RoundRecord、輸出 CSV/JSON |
+| `speech_processor/test/test_speech_test_observer.py` | 單元測試（20 tests） |
+| `test_scripts/speech_30round.yaml` | 測試定義（15 固定句 + 15 自由句） |
+| `scripts/clean_speech_env.sh` | 環境清理（kill tmux sessions + speech nodes） |
+| `scripts/run_speech_test.sh` | 一鍵 orchestration（clean → build → launch → observe → report） |
+
+### 快速使用
+
+```bash
+# 完整流程（含 build + driver 啟動）
+bash scripts/run_speech_test.sh
+
+# 跳過 build，假設 driver 已在跑
+bash scripts/run_speech_test.sh --skip-driver --skip-build
+
+# 指定不同 YAML
+bash scripts/run_speech_test.sh --yaml=test_scripts/custom.yaml
+```
+
+### 輸出
+
+- `test_results/speech_test_YYYYMMDD_HHMMSS.csv` — 逐輪原始紀錄
+- `test_results/speech_test_YYYYMMDD_HHMMSS_summary.json` — 摘要統計 + PASS/MARGINAL/FAIL 評分
+
+### 通過門檻（來源：jetson-MVP 測試手冊 §14.1）
+
+| 指標 | 門檻 |
+|------|------|
+| Fixed round 命中率 | ≥ 80% |
+| E2E 中位數延遲 | ≤ 3500ms |
+| E2E 最差延遲 | ≤ 6000ms |
+| Go2 播放成功率 | ≥ 80% |
+
+> 詳細設計見 `docs/superpowers/specs/2026-03-14-speech-30round-validation-design.md`
+
+---
+
 ## 參考資源
 
 - [Whisper](https://github.com/openai/whisper)

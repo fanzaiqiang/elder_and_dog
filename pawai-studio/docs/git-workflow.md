@@ -109,7 +109,7 @@ feat(<scope>): <你做了什麼>
 ```bash
 # 1. 啟動 Mock Server（後端）
 cd pawai-studio/backend
-pip install -r requirements.txt   # 或 uv pip install -r requirements.txt
+uv pip install -r requirements.txt
 python mock_server.py
 # Mock Server 跑在 http://localhost:8001
 

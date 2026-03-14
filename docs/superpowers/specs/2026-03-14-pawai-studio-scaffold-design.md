@@ -155,24 +155,34 @@ pawai-studio/
 
 ### 5.1 Layout Preset 規則表
 
+> 對齊 event-schema.md `LayoutPreset` type + ui-orchestration.md。
+> 本設計文件新增了 `chat_camera_speech`、`chat_gesture`、`chat_pose`，需回頭更新 event-schema.md。
+
 | Preset | 觸發條件 | 顯示 |
 |--------|---------|------|
 | `chat_only` | 初始 / 無事件 | Chat 全寬 |
-| `chat_face` | `face:track_started` 或 `face:identity_stable` | Chat + FacePanel |
+| `chat_camera` | `face:track_started` 或 `face:identity_stable` | Chat + CameraPanel + FacePanel |
 | `chat_speech` | `speech:intent_recognized` 或 `speech:wake_word` | Chat + SpeechPanel |
-| `chat_face_speech` | face + speech 事件同時活躍 | Chat + Face + Speech |
+| `chat_camera_speech` | face + speech 事件同時活躍 | Chat + Camera + Face + Speech |
 | `chat_gesture` | `gesture:gesture_detected` | Chat + GesturePanel |
 | `chat_pose` | `pose:pose_detected` | Chat + PosePanel |
-| `chat_full` | `active_panels >= 3` 或 3 種以上不同 source 在 10s 內出現 | Chat + 最多 3 panels |
+| `chat_full` | `active_panels >= 3` 或 3 種以上不同 source 在 10s 內出現 | Chat + 最多 3 panels（sidebar 2 + bottom 1） |
+| `demo` | Demo 頁面進入 | Chat + Camera + Timeline + Brain |
 
 ### 5.2 規則
 
 - Chat **永遠在左，不消失**
-- 右側 sidebar **最多同時 3 個 Panel**，超過時依優先級替換
-- Panel 優先級：Face(1) > Speech(2) > Brain(3) > Gesture(4) > Pose(5)
+- 同時可見面板上限 **4 個**（含 Chat）：sidebar 最多 2 個 + bottom 最多 1 個
+- 超過上限時依優先級替換最低的 Panel
+- Panel 優先級（對齊 ui-orchestration.md）：
+  - Chat(1) > Camera(2) > Brain(3) > Speech(4) > Timeline(5) > Health(6) > SkillButtons(7) > Gesture/Pose(8)
 - 使用者可手動收合任一 Panel
 - 收合後該 Panel 不自動回來，直到新事件觸發
-- **例外**：`critical` 事件（system:error、degradation_change、stop 指令）可強制重新展開被收合的 Panel
+- **Critical 事件例外**：以下事件可強制重新展開被收合的 Panel：
+  - `system:error`
+  - `system:degradation_change`
+  - `pose:pose_detected`（pose=fallen）
+  - stop 指令
 
 ---
 

@@ -45,6 +45,7 @@
 | success | `--success` | `#22C55E` | 正常 / 連線中 / stable |
 | warning | `--warning` | `#F59E0B` | 警告 / hold / loading |
 | destructive | `--destructive` | `#EF4444` | 錯誤 / 離線 / critical |
+| info | `--info` | `#3B82F6` | 資訊 / keep_alive / 待命 |
 
 ### 使用規則
 

@@ -134,7 +134,7 @@ interface SystemEvent extends PawAIEvent {
 
 ## 2. State Schema（狀態）
 
-狀態是**持續更新**的，代表系統當前快照。透過 WebSocket `/ws/state` 推送，或 REST `GET /api/{resource}` 拉取。
+狀態是**持續更新**的，代表系統當前快照。透過 WebSocket `/ws/events` 統一推送（與事件共用同一 endpoint），或 REST `GET /api/{resource}` 拉取。
 
 ### 2.1 人臉狀態
 
@@ -217,7 +217,39 @@ interface ModuleHealth {
 }
 ```
 
-### 2.5 機器人狀態
+### 2.5 手勢狀態
+
+**來源 ROS2 Topic**：`/state/perception/gesture`
+**更新頻率**：狀態變化時
+
+```typescript
+interface GestureState {
+  stamp: number;
+  active: boolean;                      // 是否有手勢被偵測
+  current_gesture: string | null;       // "wave" | "stop" | "point" | "ok" | null
+  confidence: number;                   // [0.0, 1.0]
+  hand: "left" | "right" | null;
+  status: "active" | "inactive" | "loading";
+}
+```
+
+### 2.6 姿勢狀態
+
+**來源 ROS2 Topic**：`/state/perception/pose`
+**更新頻率**：狀態變化時
+
+```typescript
+interface PoseState {
+  stamp: number;
+  active: boolean;
+  current_pose: string | null;          // "standing" | "sitting" | "crouching" | "fallen" | null
+  confidence: number;                   // [0.0, 1.0]
+  track_id: number | null;             // 對應的人臉 track_id
+  status: "active" | "inactive" | "loading";
+}
+```
+
+### 2.7 機器人狀態
 
 **來源**：go2_driver_node
 
@@ -292,6 +324,7 @@ interface MockTrigger {
 
 ```typescript
 type LayoutPreset = "chat_only" | "chat_camera" | "chat_speech"
+                  | "chat_camera_speech" | "chat_gesture" | "chat_pose"
                   | "chat_full" | "demo";
 
 interface PanelLayout {

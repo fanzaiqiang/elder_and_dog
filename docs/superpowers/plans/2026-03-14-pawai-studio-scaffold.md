@@ -32,7 +32,8 @@
 
 - [ ] **Step 1: Create schemas.py with all event/state/command models**
 
-對齊 `docs/Pawai-studio/event-schema.md` 的所有 interface，轉成 Pydantic v2 models。
+先實作 scaffold 所需的最小 Pydantic v2 models（Face/Speech/Gesture/Pose/Brain/System + Commands）。
+`RobotState`、`LayoutChangeEvent`、`PanelLayout`/`PanelConfig` 等進階型別留到整合階段再補。
 
 ```python
 """PawAI Studio schemas — 對齊 docs/Pawai-studio/event-schema.md"""
@@ -512,7 +513,7 @@ git commit -m "feat(backend): add Gateway + Mock Server with WebSocket + REST"
 
 ```bash
 cd pawai-studio
-npx create-next-app@latest frontend \
+npx create-next-app@latest frontend --yes \
   --typescript --tailwind --eslint --app \
   --src-dir=false --import-alias="@/*" \
   --use-npm --no-turbopack

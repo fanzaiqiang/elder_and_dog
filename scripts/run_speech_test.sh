@@ -51,10 +51,15 @@ SESSION_NAME="speech-test"
 ROBOT_IP="${ROBOT_IP:-192.168.123.161}"
 CONN_TYPE="${CONN_TYPE:-webrtc}"
 
-tmux new-session -d -s "$SESSION_NAME" \
-  "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && \
-   export ROBOT_IP=$ROBOT_IP CONN_TYPE=$CONN_TYPE && \
-   ros2 launch go2_robot_sdk robot.launch.py enable_tts:=false nav2:=false slam:=false rviz2:=false foxglove:=false'"
+if [ "$SKIP_DRIVER" = "0" ]; then
+  tmux new-session -d -s "$SESSION_NAME" \
+    "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && \
+     export ROBOT_IP=$ROBOT_IP CONN_TYPE=$CONN_TYPE && \
+     ros2 launch go2_robot_sdk robot.launch.py enable_tts:=false nav2:=false slam:=false rviz2:=false foxglove:=false'"
+else
+  echo "  [skip-driver] go2_driver_node skipped — assuming already running"
+  tmux new-session -d -s "$SESSION_NAME" "echo 'Driver skipped — this pane is a placeholder'; sleep 999999"
+fi
 
 tmux split-window -h -t "$SESSION_NAME" \
   "zsh -lc 'setopt nonomatch; cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && \
@@ -82,16 +87,7 @@ tmux split-window -v -t "$SESSION_NAME" \
    -p piper_model_path:=$PIPER_MODEL \
    -p piper_config_path:=$PIPER_CONFIG'"
 
-# Step 4: Launch observer
-echo "[4/7] Starting observer..."
-tmux split-window -v -t "$SESSION_NAME" \
-  "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && \
-   ros2 run speech_processor speech_test_observer --ros-args \
-   -p output_dir:=$WORKDIR/test_results'"
-
-# Health checks (use bash-compatible setup files for the orchestrator shell)
-echo "[4/7] Health checks..."
-
+# Health check helper + ROS2 env for orchestrator shell
 wait_for_topic() {
   local TOPIC="$1"
   local TIMEOUT="$2"
@@ -109,11 +105,15 @@ wait_for_topic() {
 source /opt/ros/humble/setup.bash
 source "$WORKDIR/install/setup.bash"
 
-for CHECK in \
-  "/speech_test_observer/round_meta_ack:15" \
-  "/tts:15" \
-  "/webrtc_req:15" \
-  "/event/speech_intent_recognized:45"; do
+# Health checks for speech nodes (observer not started yet)
+echo "[4/7] Health checks..."
+
+HEALTH_CHECKS="/tts:15 /event/speech_intent_recognized:45"
+if [ "$SKIP_DRIVER" = "0" ]; then
+  HEALTH_CHECKS="/webrtc_req:15 $HEALTH_CHECKS"
+fi
+
+for CHECK in $HEALTH_CHECKS; do
   TOPIC="${CHECK%:*}"
   TIMEOUT="${CHECK#*:}"
   echo "  Waiting for $TOPIC (${TIMEOUT}s)..."
@@ -125,12 +125,28 @@ for CHECK in \
   echo "  OK $TOPIC ready"
 done
 
-# Step 5: Warmup round (not counted)
+# Step 5: Warmup round BEFORE observer starts (so warmup is not recorded)
 echo ""
 echo "=== WARMUP (不計分) ==="
-echo "請說任意一句話做暖機..."
+echo "請說任意一句話做暖機（observer 尚未啟動，此輪不會進入統計）..."
 read -rp "（完成後按 Enter）"
 echo ""
+
+# Step 4b: Launch observer AFTER warmup (clean start, no warmup pollution)
+echo "[4b/7] Starting observer..."
+tmux split-window -v -t "$SESSION_NAME" \
+  "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && \
+   ros2 run speech_processor speech_test_observer --ros-args \
+   -p output_dir:=$WORKDIR/test_results'"
+
+# Wait for observer to be ready
+echo "  Waiting for observer..."
+if ! wait_for_topic "/speech_test_observer/round_meta_ack" 15; then
+  echo "[ERROR] Observer not ready"
+  tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
+  exit 1
+fi
+echo "  OK observer ready"
 
 # Parse YAML into tab-separated lines (one python3 call for all rounds)
 echo "[5/7] Running test rounds..."

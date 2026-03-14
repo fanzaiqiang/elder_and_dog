@@ -1122,14 +1122,14 @@ KILLED_PROCS=0
 for sess in "${SPEECH_SESSIONS[@]}"; do
   if tmux has-session -t "$sess" 2>/dev/null; then
     tmux kill-session -t "$sess" 2>/dev/null || true
-    ((KILLED_SESSIONS++))
+    KILLED_SESSIONS=$((KILLED_SESSIONS + 1))
   fi
 done
 
 # Step 2: pkill speech nodes
 for proc in "${SPEECH_PROCS[@]}"; do
   if pkill -f "$proc" 2>/dev/null; then
-    ((KILLED_PROCS++))
+    KILLED_PROCS=$((KILLED_PROCS + 1))
   fi
 done
 
@@ -1147,7 +1147,7 @@ while [ $WAITED -lt 50 ]; do
     break
   fi
   sleep 0.1
-  ((WAITED++))
+  WAITED=$((WAITED + 1))
 done
 
 # Step 4: Check for residual processes
@@ -1182,6 +1182,8 @@ bash scripts/clean_speech_env.sh
 Expected: `[OK] Speech environment clean` (nothing to kill on dev machine).
 
 - [ ] **Step 3: Update start_asr_tts_no_vad_tmux.sh**
+
+> **行為變更注意**：原本只 kill 自己的 session `asr-tts-no-vad`。新版 `clean_speech_env.sh` 會額外清理 `speech-e2e` 和 `speech-test` sessions。這是刻意的改善，確保任何語音測試環境殘留都被清除。
 
 Replace lines 58-61:
 
@@ -1220,19 +1222,20 @@ git commit -m "feat: add clean_speech_env.sh and integrate into no-VAD launcher"
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORKDIR="/home/jetson/elder_and_dog"
+WORKDIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CT2_LIB_PATH="$HOME/.local/ctranslate2-cuda/lib"
-YAML_FILE="${SCRIPT_DIR}/../test_scripts/speech_30round.yaml"
+YAML_FILE="${WORKDIR}/test_scripts/speech_30round.yaml"
 SKIP_BUILD=0
 SKIP_DRIVER=0
 
-# Parse args
-for arg in "$@"; do
-  case "$arg" in
-    --skip-build) SKIP_BUILD=1 ;;
-    --skip-driver) SKIP_DRIVER=1 ;;
-    --yaml=*) YAML_FILE="${arg#*=}" ;;
-    --yaml) shift; YAML_FILE="$1" ;;
+# Parse args (while+shift, not for loop)
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-build) SKIP_BUILD=1; shift ;;
+    --skip-driver) SKIP_DRIVER=1; shift ;;
+    --yaml=*) YAML_FILE="${1#*=}"; shift ;;
+    --yaml) YAML_FILE="$2"; shift 2 ;;
+    *) shift ;;
   esac
 done
 
@@ -1303,25 +1306,25 @@ tmux split-window -v -t "$SESSION_NAME" \
    ros2 run speech_processor speech_test_observer --ros-args \
    -p output_dir:=$WORKDIR/test_results'"
 
-# Health checks
+# Health checks (use bash-compatible setup files for the orchestrator shell)
 echo "[4/7] Health checks..."
 
 wait_for_topic() {
   local TOPIC="$1"
   local TIMEOUT="$2"
   local ELAPSED=0
-  while [ $ELAPSED -lt "$TIMEOUT" ]; do
+  while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
     if ros2 topic info "$TOPIC" 2>/dev/null | grep -q "Publisher count: [1-9]"; then
       return 0
     fi
     sleep 1
-    ((ELAPSED++))
+    ELAPSED=$((ELAPSED + 1))
   done
   return 1
 }
 
-source /opt/ros/humble/setup.zsh 2>/dev/null || source /opt/ros/humble/setup.bash
-source "$WORKDIR/install/setup.zsh" 2>/dev/null || source "$WORKDIR/install/setup.bash"
+source /opt/ros/humble/setup.bash
+source "$WORKDIR/install/setup.bash"
 
 for CHECK in \
   "/speech_test_observer/round_meta_ack:15" \
@@ -1336,43 +1339,36 @@ for CHECK in \
     tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
     exit 1
   fi
-  echo "  ✓ $TOPIC ready"
+  echo "  OK $TOPIC ready"
 done
 
-# Step 5: Warmup round
+# Step 5: Warmup round (not counted)
 echo ""
 echo "=== WARMUP (不計分) ==="
 echo "請說任意一句話做暖機..."
 read -rp "（完成後按 Enter）"
 echo ""
 
-# Step 5: Read YAML and run test loop
+# Parse YAML into tab-separated lines (one python3 call for all rounds)
 echo "[5/7] Running test rounds..."
 
-ROUND_COUNT=$(python3 -c "
-import yaml, json
+ROUND_DATA=$(python3 -c "
+import yaml, json, sys
 with open('$YAML_FILE') as f:
     d = yaml.safe_load(f)
 fixed = d.get('fixed_rounds', [])
 free = d.get('free_rounds', [])
+total = len(fixed) + len(free)
 for r in fixed:
-    print(json.dumps({'round_id': r['round_id'], 'mode': 'fixed',
-          'expected_intent': r['expected_intent'], 'utterance': r.get('utterance',''),
-          'notes': r.get('notes','')}))
+    print('\t'.join([str(r['round_id']), 'fixed', r['expected_intent'],
+          r.get('utterance',''), r.get('notes',''), str(total)]))
 for r in free:
-    print(json.dumps({'round_id': r['round_id'], 'mode': 'free',
-          'expected_intent': '', 'utterance': '',
-          'notes': r.get('notes','')}))
+    print('\t'.join([str(r['round_id']), 'free', '', '',
+          r.get('notes',''), str(total)]))
 ")
 
-echo "$ROUND_COUNT" | while IFS= read -r LINE; do
-  ROUND_ID=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['round_id'])")
-  MODE=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['mode'])")
-  EXPECTED=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['expected_intent'])")
-  UTTERANCE=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['utterance'])")
-  NOTES=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin)['notes'])")
-  TOTAL=30
-
+# Read rounds using here-string (not pipe) to keep stdin for operator interaction
+while IFS=$'\t' read -r ROUND_ID MODE EXPECTED UTTERANCE NOTES TOTAL; do
   echo ""
   if [ "$MODE" = "fixed" ]; then
     echo "[Round $ROUND_ID/$TOTAL] [FIXED] 請說：「$UTTERANCE」"
@@ -1382,38 +1378,72 @@ echo "$ROUND_COUNT" | while IFS= read -r LINE; do
     if [ -n "$NOTES" ]; then
       echo "  提示：$NOTES"
     fi
-    read -rp "  expected_intent?（可留空）：" EXPECTED
+    read -rp "  expected_intent?（可留空）：" EXPECTED </dev/tty
   fi
 
-  # Send round meta
+  # Send round meta and wait for ack
   META_JSON="{\"round_id\":$ROUND_ID,\"mode\":\"$MODE\",\"expected_intent\":\"$EXPECTED\",\"utterance_text\":\"$UTTERANCE\"}"
-  ros2 topic pub --once /speech_test_observer/round_meta_req std_msgs/msg/String "{data: '$META_JSON'}" >/dev/null 2>&1 &
 
-  read -rp "  （準備好後按 Enter，輸入 q 結束）" INPUT
+  # Start listening for ack before publishing (avoid race)
+  timeout 5 ros2 topic echo --once /speech_test_observer/round_meta_ack std_msgs/msg/String 2>/dev/null &
+  ACK_PID=$!
+  sleep 0.2
+  ros2 topic pub --once /speech_test_observer/round_meta_req std_msgs/msg/String "{data: '$META_JSON'}" >/dev/null 2>&1
+  wait $ACK_PID 2>/dev/null || echo "  [WARN] meta ack timeout"
+
+  read -rp "  （準備好後按 Enter，輸入 q 結束）" INPUT </dev/tty
   if [ "$INPUT" = "q" ]; then
     echo "[INFO] 測試提前結束"
     break
   fi
 
-  # Wait for round to complete (simple delay for observer to collect)
+  # Wait for observer to collect round data, then show result
   sleep 3
-done
+
+  # Read latest observer log for this round's result (best-effort)
+  RESULT=$(timeout 2 ros2 topic echo --once /state/interaction/speech std_msgs/msg/String 2>/dev/null || true)
+  echo "  [Round $ROUND_ID] 已記錄（詳見最終報告）"
+
+done <<< "$ROUND_DATA"
 
 # Step 6: Generate report
 echo ""
 echo "[6/7] Generating report..."
-ros2 topic pub --once /speech_test_observer/generate_report_req std_msgs/msg/String "{data: '{}'}" >/dev/null 2>&1
 
-# Wait for ack
-sleep 2
-ACK=$(timeout 5 ros2 topic echo --once /speech_test_observer/generate_report_ack std_msgs/msg/String 2>/dev/null || echo '{"ok":false}')
-echo "$ACK"
+# Start listening for ack BEFORE publishing (avoid race condition)
+timeout 10 ros2 topic echo --once /speech_test_observer/generate_report_ack std_msgs/msg/String 2>/dev/null &
+REPORT_ACK_PID=$!
+sleep 0.2
+ros2 topic pub --once /speech_test_observer/generate_report_req std_msgs/msg/String "{data: '{}'}" >/dev/null 2>&1
+wait $REPORT_ACK_PID 2>/dev/null && echo "[OK] Report generated" || echo "[WARN] Report ack timeout"
 
 # Step 7: Display summary
 echo ""
 echo "[7/7] Done!"
-echo "Results in: test_results/"
-ls -la test_results/ 2>/dev/null || echo "(no results yet)"
+echo "Results in: $WORKDIR/test_results/"
+ls -la "$WORKDIR/test_results/" 2>/dev/null || echo "(no results yet)"
+
+# Show summary JSON if available
+LATEST_SUMMARY=$(ls -t "$WORKDIR/test_results/"*_summary.json 2>/dev/null | head -1)
+if [ -n "$LATEST_SUMMARY" ]; then
+  echo ""
+  echo "=== Summary ==="
+  python3 -c "
+import json, sys
+with open('$LATEST_SUMMARY') as f:
+    s = json.load(f)
+print(f'Grade: {s[\"grade\"]}')
+print(f'Completed: {s[\"completed\"]}/{s[\"total_rounds\"]}')
+fr = s.get('fixed_rounds', {})
+print(f'Fixed accuracy: {fr.get(\"hit\",0)}/{fr.get(\"total\",0)} = {fr.get(\"accuracy\",0):.1%}')
+lat = s.get('latency', {})
+print(f'E2E median: {lat.get(\"e2e_median_ms\",0):.0f}ms, max: {lat.get(\"e2e_max_ms\",0):.0f}ms')
+print(f'Play OK rate: {lat.get(\"play_ok_rate\",0):.1%}')
+for k, v in s.get('pass_criteria', {}).items():
+    mark = 'PASS' if v['pass'] else 'FAIL'
+    print(f'  {k}: {v[\"actual\"]} (threshold: {v[\"threshold\"]}) [{mark}]')
+"
+fi
 
 echo ""
 echo "=== Test Complete ==="
@@ -1453,8 +1483,8 @@ Expected: `"speech_test_observer = speech_processor.speech_test_observer:main",`
 ```bash
 mkdir -p test_results
 touch test_results/.gitkeep
-echo "test_results/*.csv" >> .gitignore
-echo "test_results/*.json" >> .gitignore
+grep -q "test_results/\*.csv" .gitignore 2>/dev/null || echo "test_results/*.csv" >> .gitignore
+grep -q "test_results/\*.json" .gitignore 2>/dev/null || echo "test_results/*.json" >> .gitignore
 ```
 
 - [ ] **Step 3: Full build test**

@@ -393,7 +393,7 @@ ws.onmessage = (msg) => {
 ```bash
 # .env.development
 NEXT_PUBLIC_GATEWAY_URL=http://localhost:8001
-NEXT_PUBLIC_WS_URL=ws://localhost:8001/ws
+NEXT_PUBLIC_WS_URL=ws://localhost:8001/ws/events
 ```
 
 Mock Server 提供完全相同的 WebSocket 和 REST 介面，差別只在資料來源是假資料。

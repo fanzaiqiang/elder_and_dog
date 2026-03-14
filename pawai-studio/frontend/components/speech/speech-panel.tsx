@@ -1,23 +1,30 @@
-"use client"
+'use client'
 
-import { Mic } from "lucide-react"
-import { PanelCard } from "@/components/shared/panel-card"
-import type { SpeechState, SpeechIntentEvent } from "@/contracts/types"
+import { Mic } from 'lucide-react'
+import { PanelCard } from '@/components/shared/panel-card'
+import { useStateStore } from '@/stores/state-store'
+import { useEventStore } from '@/stores/event-store'
+import type { SpeechState } from '@/contracts/types'
 
-interface SpeechPanelProps {
-  data: SpeechState
-  events: SpeechIntentEvent[]
-}
+export function SpeechPanel() {
+  const speechState = useStateStore((s) => s.speechState) as SpeechState | null
+  const events = useEventStore((s) => s.events.filter((e) => e.source === 'speech'))
 
-export function SpeechPanel({ data, events }: SpeechPanelProps) {
+  const status = !speechState
+    ? 'loading' as const
+    : speechState.phase !== 'idle_wakeword'
+      ? 'active' as const
+      : 'inactive' as const
+
   return (
     <PanelCard
       title="語音互動"
       icon={<Mic className="h-4 w-4" />}
-      status={data.phase !== "idle_wakeword" ? "active" : "inactive"}
+      status={status}
     >
-      <div className="flex items-center justify-center h-32 text-[#55556A] text-sm">
-        <p>TODO: 負責實作（見 speech-panel-spec.md）</p>
+      {/* TODO: 陳 — 看 docs/speech-panel-spec.md 實作 */}
+      <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
+        待實作 — 參考 speech-panel-spec.md
       </div>
     </PanelCard>
   )

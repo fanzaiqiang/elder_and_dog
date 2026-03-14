@@ -61,7 +61,7 @@ def compute_round_status(r: RoundRecord) -> str:
 class SessionAggregator:
     """Aggregates topic events into RoundRecords."""
 
-    def __init__(self, tts_correlation_window_s: float = 3.0):
+    def __init__(self, tts_correlation_window_s: float = 5.0):
         self.rounds: List[RoundRecord] = []
         self._pending_meta: Optional[Dict] = None
         self._prev_state: str = "LISTENING"
@@ -367,7 +367,7 @@ if _HAS_ROS2:
             super().__init__("speech_test_observer")
 
             self.declare_parameter("output_dir", "test_results")
-            self.declare_parameter("tts_correlation_window_s", 3.0)
+            self.declare_parameter("tts_correlation_window_s", 5.0)
             self.declare_parameter("round_meta_timeout_s", 30.0)
             self.declare_parameter("round_complete_timeout_s", 10.0)
 

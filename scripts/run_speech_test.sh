@@ -205,9 +205,11 @@ while IFS=$'\t' read -r ROUND_ID MODE EXPECTED UTTERANCE NOTES TOTAL; do
 
 done <<< "$ROUND_DATA"
 
-# Step 6: Generate report
+# Step 6: Wait for last round to finish, then generate report
 echo ""
-echo "[6/7] Generating report..."
+echo "[6/7] Waiting for last round to finish..."
+sleep 8  # drain: let TTS + webrtc playback complete for the final round
+echo "Generating report..."
 
 # Start listening for ack BEFORE publishing (avoid race condition)
 timeout 10 ros2 topic echo --once /speech_test_observer/generate_report_ack std_msgs/msg/String 2>/dev/null &

@@ -302,7 +302,7 @@ run_speech_test.sh [--yaml path] [--skip-build] [--skip-driver]
 **流程**：
 
 ```
-1. source clean_speech_env.sh
+1. bash clean_speech_env.sh
 2. colcon build（除非 --skip-build）
 3. 啟動主線 nodes + health check
 4. 啟動 speech_test_observer
@@ -428,6 +428,8 @@ e2e_latency_ms, match, status, correlated_by_time, notes
 | `play_ok_rate` | 有收到 `api_id=4001` 的輪次佔 `completed` 的比例 |
 | `no_expected` | free_rounds 中操作者未填 `expected_intent` 的輪次，不參與命中率計算 |
 
+> **`free_rounds` 不計算整體 accuracy**：因 `no_expected` 的存在，free_rounds 的命中率僅在 `with_expected` 子集中有意義（`hit / with_expected`），不另設 accuracy 欄位。
+
 #### Grade 判定邏輯
 
 | Grade | 條件 |
@@ -453,7 +455,7 @@ e2e_latency_ms, match, status, correlated_by_time, notes
 | 新增 | `scripts/clean_speech_env.sh` | 環境清理腳本 |
 | 新增 | `scripts/run_speech_test.sh` | 測試 orchestration 腳本 |
 | 修改 | `speech_processor/setup.py` | 新增 `speech_test_observer` entry_point |
-| 修改 | `scripts/start_asr_tts_no_vad_tmux.sh` | 開頭改用 `source clean_speech_env.sh` |
+| 修改 | `scripts/start_asr_tts_no_vad_tmux.sh` | 開頭改用 `bash clean_speech_env.sh` |
 
 ---
 

@@ -131,6 +131,20 @@ class SessionAggregator:
         r = self._find_round_by_session(session_id)
         if not r:
             r = self._current_round()
+        # text_input path: no state transition happened, create a new round
+        if not r or (r.intent_ts > 0 and r.session_id != session_id):
+            self._auto_round_id += 1
+            r = RoundRecord(speech_start_ts=ts, asr_ts=ts)
+            r.session_id = session_id
+            if self._pending_meta:
+                r.round_id = self._pending_meta["round_id"]
+                r.mode = self._pending_meta["mode"]
+                r.expected_intent = self._pending_meta["expected_intent"]
+                r.utterance_text = self._pending_meta["utterance_text"]
+                self._pending_meta = None
+            else:
+                r.round_id = self._auto_round_id
+            self.rounds.append(r)
         if r:
             r.intent = intent
             r.intent_ts = ts

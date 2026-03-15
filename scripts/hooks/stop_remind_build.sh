@@ -123,7 +123,7 @@ fi
 if command -v codex &>/dev/null; then
   echo ""
   echo "=== CODE REVIEW (Codex) ==="
-  timeout 20s codex review --uncommitted "只回報 bug/security/crash，忽略風格建議。回覆限制在 5 行以內，用繁體中文。" 2>/dev/null || echo "（Codex review 跳過：超時或 CLI 呼叫失敗）"
+  timeout 30s codex review --uncommitted 2>/dev/null || echo "（Codex review 跳過：超時或 CLI 呼叫失敗）"
   echo "==========================="
   echo ""
 fi

@@ -592,6 +592,118 @@ docs/
 
 ---
 
+## 11. 模組開發 SOP
+
+> **來源**：2026-03-15 語音模組 30 輪驗收，踩了 36 個坑（30 個在驗收工具，6 個在語音主線）。本 SOP 將教訓制度化，適用於所有模組。
+>
+> **完整設計文件**：[`docs/superpowers/specs/2026-03-15-module-dev-sop-design.md`](../superpowers/specs/2026-03-15-module-dev-sop-design.md)
+
+### 11.1 環境同步規範
+
+| # | 規則 |
+|---|------|
+| 1 | 要上 Jetson 驗證的變更必須先 commit；需跨機同步或交接時必須 push |
+| 2 | Jetson 上禁止直接改 code（除緊急 hotfix），hotfix 完必須 30 分鐘內 commit 回 repo |
+| 3 | `colcon build` 後必須 `source install/setup.zsh` + 重啟受影響 node |
+| 4 | Jetson 端固定 zsh，腳本若採 bash 需整段自洽，不可混 source |
+| 5 | 會 source ROS2 setup 的 shell script 預設不用 `set -u` |
+
+> 單人快速迭代可直接用 main。多 agent 並行時，Builder 各用功能分支，由 Integrator merge（見 §11.6）。
+
+### 11.2 裝置前置檢查
+
+**不通過不進入 build/test。**
+
+**Core（所有模組）**：ROS2 環境可用、無非預期殘留 node。
+**Robot-dependent（語音、demo）**：Go2 連線 + driver 存活。
+**語音專屬**：PulseAudio 已停、麥克風可用、CUDA 可用。
+**人臉專屬**：D435 連線、YuNet 模型存在。
+**LLM 專屬**：RTX server 連線、vLLM health。
+
+> 完整指令與通過條件見 [SOP 設計文件](../superpowers/specs/2026-03-15-module-dev-sop-design.md)。
+
+### 11.3 跨 Node 協調設計原則
+
+**設計總則：**
+- **狀態**靠 latched state topic
+- **事件**靠 volatile + correlation id（session_id / track_id / request_id）
+- **控制**靠 req/ack（ack 必須帶回 request_id）
+- **所有跨 node 契約先在 [`interaction_contract.md`](../architecture/interaction_contract.md) 登記再實作**
+
+**關鍵原則**：latched topic init 時發初始值、gate/mute 必須有 timeout 保護、新增 intent/event type 必須同步更新共享常數。
+
+### 11.4 驗收分級與切換條件
+
+**核心規則：子模組靠 spec + smoke + review，整合主線才跑 YAML 驗收。**
+
+| 級別 | 適用 | 形式 | 通過標準 |
+|:----:|------|------|----------|
+| **Level A** | 單一模組可獨立驗證 | spec + smoke test + code review | smoke 全綠 + 無 blocking issue |
+| **Level B** | 接進 ROS2 主線、與其他 node 互動 | YAML case + 自動判定 + 報表 | 10+ case、關鍵指標達門檻 |
+
+**升級條件（A → B）**：Level A 全綠，且至少滿足其一：介面已相對穩定、開始影響 demo 主線。**不滿足時禁止花時間做 Level B 驗收工具。**
+
+### 11.5 模組整合 Checklist
+
+```
+Level 1: Standalone → Level 2: Node-level → Level 3: System-level → Level 4: Demo-level
+```
+
+**原則上不可跳級；例外需記錄理由與風險。**
+
+| 等級 | 關鍵 Checklist |
+|:----:|---------------|
+| **L1** | 目標平台可執行、有 input/output 定義、smoke test 全綠、無硬編碼路徑、code review 通過 |
+| **L2** | 標準啟動入口、topic 登記在 contract、QoS 符合 §11.3、init publish 初始狀態、colcon build 通過 |
+| **L3** | 多 node 共存、gate/ack 有 timeout、Level B 驗收、clean/start 腳本、preflight 涵蓋 |
+| **L4** | Demo 流程文件、連續 3 次 cold start 成功、記憶體預算確認、降級策略、展示前 SOP |
+
+**模組整合等級快照（2026-03-15）：**
+
+| 模組 | 當前等級 | 下一步 |
+|------|:--------:|--------|
+| 語音（STT/TTS/Intent） | Level 3 | Level 4（Demo 穩定化） |
+| 人臉（YuNet/SFace） | Level 1 | Level 2（ROS2 node 化） |
+| AI 大腦（LLM） | 尚未開始 | Level 1（vLLM smoke test） |
+| 手勢 | 研究中 | — |
+| 姿勢 | 研究中 | — |
+
+### 11.6 多 Agent 並行開發流程
+
+| 角色 | 職責 |
+|------|------|
+| **Architect** | 拆功能為子模組 spec、定義介面契約、決定整合順序 |
+| **Builder** (×N) | 各自在 worktree 開發子模組，通過 Level A。**不可自行變更共享契約** |
+| **Reviewer** | 對 Builder 產出做 code review |
+| **Integrator** | merge 到主線，決定合併順序與衝突優先級 |
+| **Validator** | 對整合後主線跑 Level B 驗收 |
+
+```
+Architect: spec → 拆 N 子模組 → Dispatch N Builder（worktree）
+  → Builder: 實作 → smoke → Reviewer → commit
+  → Integrator: 按順序 merge
+  → Validator: Level B 驗收 → 通過 → main
+```
+
+**前提**：子模組介面 spec 層凍結、Builder 只碰自己的檔案範圍、共享 schema 由 Architect 先建好。
+
+### 11.7 Code Review 規範
+
+**預設 checkpoint-based（快）**：Builder 完成 chunk → code-reviewer → 不通過就地修 → 通過 commit。
+
+**升級 PR-based（嚴）** 條件（任一）：改 event/state/topic/schema、碰整合分支或 main、影響多模組介面、影響 demo 主線、改驗收工具或部署流程（預設高風險）。
+
+| Layer | 時機 | 工具 | 性質 | 狀態 |
+|:-----:|------|------|------|:----:|
+| 1 | 每次 Edit/Write | 專案級快檢（py_compile；前端：eslint） | 自動，阻擋 | 已有 |
+| 2 | 每個 chunk | code-reviewer agent | 手動，阻擋 | 已有 |
+| 3 | 整合前 PR | code-reviewer + codex/haiku | 正式，阻擋 | 已有 |
+| 4 | 對話結束 | Stop hook (codex + haiku) | 僅補充意見，**不作 merge gate** | 已有 |
+
+> **Target**：Layer 1 擴充 ruff + 全路徑 eslint。
+
+---
+
 ## 附錄：關鍵決策摘要 (v2.0)
 
 | 決策項目 | 選定方案 | 決策理由 |
@@ -611,6 +723,6 @@ docs/
 
 ---
 
-*最後更新：2026-03-12*
+*最後更新：2026-03-15*
 *維護者：System Architect*
-*狀態：v2.0（功能閉環決策版）*
+*狀態：v2.1（+模組開發 SOP）*

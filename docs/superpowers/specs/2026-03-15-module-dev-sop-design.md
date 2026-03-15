@@ -72,7 +72,12 @@ source install/setup.zsh
 |---|--------|------|----------|----------|
 | 1 | ROS2 環境 | `ros2 topic list` | 有輸出 | `source /opt/ros/humble/setup.zsh && source install/setup.zsh` |
 | 2 | 無非預期殘留 node | `ps aux \| grep -E '<node_patterns>'` | 無非預期匹配 | `clean_<module>_env.sh` |
-| 3 | Go2 連線 | `ping -c 2 <robot_ip>` | 0% loss | 檢查網線/Wi-Fi、Go2 是否開機 |
+
+**需要 Go2 機器人的模組（語音、demo pipeline）：**
+
+| # | 檢查項 | 指令 | 通過條件 | 失敗處理 |
+|---|--------|------|----------|----------|
+| R1 | Go2 連線 | `ping -c 2 <robot_ip>` | 0% loss | 檢查網線/Wi-Fi、Go2 是否開機 |
 
 **語音模組專屬：**
 

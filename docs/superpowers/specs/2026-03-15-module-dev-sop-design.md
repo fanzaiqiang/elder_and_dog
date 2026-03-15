@@ -30,17 +30,17 @@
 **同步 SOP（每次開發前）：**
 
 ```bash
-# 1. dev machine: 完成變更後 commit
+# 1. dev machine: 完成變更後 commit 到當前分支
 git add <files> && git commit -m "..."
 
-# 2. 需要跨機驗證時 push
-git push origin main
+# 2. 需要跨機驗證時 push（推到功能分支或 main，視情況）
+git push origin <branch>
 
 # 3. Jetson: 檢查工作樹
 cd ~/elder_and_dog && git status --short
 
-# 4. Jetson: pull
-git pull origin main
+# 4. Jetson: 切到對應分支並 pull
+git checkout <branch> && git pull origin <branch>
 
 # 5. Jetson: build
 colcon build --packages-select <changed_packages>
@@ -53,6 +53,8 @@ source install/setup.zsh
 # 8. Jetson: 最小 smoke test
 ```
 
+> **註**：單人快速迭代（如 Architect 本人）可直接用 main。多 agent 並行時，Builder 各用功能分支，整合時由 Integrator merge（見 §11.6）。
+
 **Anti-pattern：**
 - 不要用 `rsync --delete` 同步整個 repo
 - 不要在 Jetson 上 `git reset --hard` 除非確認沒有 local stash
@@ -62,23 +64,38 @@ source install/setup.zsh
 
 ## §11.2 裝置前置檢查
 
-**規則：每次啟動 session 前必須跑完前置檢查。不通過不進入 build/test。**
+**規則：每次啟動 session 前，跑完 core + 對應模組的前置檢查。不通過不進入 build/test。**
 
-**通用檢查表（按順序）：**
+**Core 檢查（所有模組都要跑）：**
 
 | # | 檢查項 | 指令 | 通過條件 | 失敗處理 |
 |---|--------|------|----------|----------|
-| 1 | Go2 連線 | `ping -c 2 <robot_ip>` | 0% loss | 檢查網線/Wi-Fi、Go2 是否開機 |
-| 1b | Go2 driver 存活 | `ros2 topic info /webrtc_req` | Subscription count ≥ 1 | 重啟 driver |
-| 2 | PulseAudio 已停 | `arecord -l` 確認 capture device，再 `fuser /dev/snd/pcmC<X>D<Y>c` | 無輸出 | `pulseaudio --kill && systemctl --user mask pulseaudio.socket pulseaudio.service` |
-| 3 | 麥克風可用 | `arecord -D plughw:0,0 -f S16_LE -c 2 -r 44100 -d 1 /tmp/mic_test.wav` | 錄音成功 | 檢查 USB、`arecord -l` |
-| 4 | CUDA 可用 | `python3 -c "import ctranslate2; print(ctranslate2.get_cuda_device_count())"` | ≥ 1 | 確認 `LD_LIBRARY_PATH` |
-| 5 | ROS2 環境 | `ros2 topic list` | 有輸出 | `source /opt/ros/humble/setup.zsh && source install/setup.zsh` |
-| 6 | 無非預期殘留 node | `ps aux \| grep -E '<node_patterns>'` | 無非預期匹配 | `clean_<module>_env.sh` |
+| 1 | ROS2 環境 | `ros2 topic list` | 有輸出 | `source /opt/ros/humble/setup.zsh && source install/setup.zsh` |
+| 2 | 無非預期殘留 node | `ps aux \| grep -E '<node_patterns>'` | 無非預期匹配 | `clean_<module>_env.sh` |
+| 3 | Go2 連線 | `ping -c 2 <robot_ip>` | 0% loss | 檢查網線/Wi-Fi、Go2 是否開機 |
 
-**模組專屬檢查（按需加入）：**
-- 人臉：`rs-enumerate-devices | grep D435`、`ls <yunet_model_path>`
-- LLM：`ping <rtx_server_ip>`、`curl http://<server>:8000/health`
+**語音模組專屬：**
+
+| # | 檢查項 | 指令 | 通過條件 | 失敗處理 |
+|---|--------|------|----------|----------|
+| S1 | Go2 driver 存活 | `ros2 topic info /webrtc_req` | Subscription count ≥ 1 | 重啟 driver |
+| S2 | PulseAudio 已停 | `arecord -l` 確認 capture device，再 `fuser /dev/snd/pcmC<X>D<Y>c` | 無輸出 | `pulseaudio --kill && systemctl --user mask pulseaudio.socket pulseaudio.service` |
+| S3 | 麥克風可用 | `arecord -D plughw:0,0 -f S16_LE -c 2 -r 44100 -d 1 /tmp/mic_test.wav` | 錄音成功 | 檢查 USB、`arecord -l` |
+| S4 | CUDA 可用 | `python3 -c "import ctranslate2; print(ctranslate2.get_cuda_device_count())"` | ≥ 1 | 確認 `LD_LIBRARY_PATH` |
+
+**人臉模組專屬：**
+
+| # | 檢查項 | 指令 | 通過條件 |
+|---|--------|------|----------|
+| F1 | D435 連線 | `rs-enumerate-devices \| grep D435` | 有匹配 |
+| F2 | YuNet 模型存在 | `ls <yunet_model_path>` | 檔案存在 |
+
+**LLM 模組專屬：**
+
+| # | 檢查項 | 指令 | 通過條件 |
+|---|--------|------|----------|
+| L1 | RTX server 連線 | `ping -c 2 <rtx_server_ip>` | 0% loss |
+| L2 | vLLM health | `curl http://<server>:8000/health` | HTTP 200 |
 
 **Anti-pattern：**
 - 不要跳過 PulseAudio 檢查就直接開 STT
@@ -297,12 +314,14 @@ Level 1: Standalone → Level 2: Node-level → Level 3: System-level → Level 
 
 ### Review 層次
 
-| Layer | 時機 | 工具 | 性質 |
-|:-----:|------|------|------|
-| 1 | 每次 Edit/Write | py_compile, ruff, eslint | 自動，阻擋 |
-| 2 | 每個 chunk 完成 | code-reviewer agent | 手動觸發，阻擋 |
-| 3 | 整合前 PR | code-reviewer + codex/haiku | 正式，阻擋 |
-| 4 | 對話結束 | Stop hook (codex + haiku) | **僅補充意見，不作 merge gate** |
+| Layer | 時機 | 工具 | 性質 | 狀態 |
+|:-----:|------|------|------|:----:|
+| 1 | 每次 Edit/Write | 專案級快檢（目前：py_compile；前端路徑：eslint） | 自動，阻擋 | 已有 |
+| 2 | 每個 chunk 完成 | code-reviewer agent | 手動觸發，阻擋 | 已有 |
+| 3 | 整合前 PR | code-reviewer + codex/haiku 第二意見 | 正式，阻擋 | 已有 |
+| 4 | 對話結束 | Stop hook (codex + haiku) | **僅補充意見，不作 merge gate** | 已有 |
+
+> **Target**：Layer 1 擴充 ruff（Python linting）、全路徑 eslint。待專案穩定後統一配置。
 
 ### 不通過處理
 

@@ -38,8 +38,8 @@ jobs:
           (apt update && apt install --no-install-recommends libunwind-dev -y) || true
       - name: Install Python dependencies
         run: |
-          pip3 install wasmtime aiortc aiohttp cryptography pydub || \
-          pip3 install --break-system-packages wasmtime aiortc aiohttp cryptography pydub || true
+          pip3 install wasmtime aiortc aiohttp cryptography pydub pycryptodome || \
+          pip3 install --break-system-packages wasmtime aiortc aiohttp cryptography pydub pycryptodome || true
       - name: build and test
         uses: ros-tooling/action-ros-ci@master
         with:

@@ -12,12 +12,34 @@
 
 資料流：
 
-1. RealSense RGB topic：`/camera/camera/color/image_raw`
-2. 偵測/辨識：`scripts/face_identity_infer_cv.py`
+1. RealSense RGB + Depth topic：`/camera/camera/color/image_raw` + `aligned_depth_to_color`
+2. 偵測/辨識/追蹤：`scripts/face_identity_infer_cv.py`
 3. 輸出 topic：
-   - `/face_identity/debug_image`
+   - `/face_identity/debug_image` — debug 影像（帶框）
    - `/face_identity/compare_image`（可關閉）
-4. 監看：`foxglove_bridge` + Foxglove App
+   - **`/state/perception/face`** — 結構化狀態 JSON（2026-03-16 新增）
+   - **`/event/face_identity`** — 身份事件 JSON（2026-03-16 新增）
+4. 監看：`foxglove_bridge` + Foxglove App，或 `ros2 topic echo`
+
+### ROS2 Topic 發布（2026-03-16 新增）
+
+`face_identity_infer_cv.py` 現在發布兩個標準 topic（對齊 `interaction_contract.md` v2.0）：
+
+**`/state/perception/face`**（每 tick 發布，`std_msgs/String` JSON）：
+```json
+{"stamp": 1773926400.0, "face_count": 2, "tracks": [
+  {"track_id": 1, "stable_name": "Roy", "sim": 0.42, "distance_m": 1.25, "bbox": [100,150,200,280], "mode": "stable"},
+  {"track_id": 2, "stable_name": "unknown", "sim": 0.18, "distance_m": 2.1, "bbox": [300,180,380,300], "mode": "hold"}
+]}
+```
+
+**`/event/face_identity`**（狀態變化時觸發）：
+- `track_started` — 新 track 出現
+- `identity_stable` — 身份穩定化通過（unknown → 具名）
+- `identity_changed` — 身份變更
+- `track_lost` — track 消失
+
+這些 topic 被 `llm_bridge_node` 訂閱，用於 LLM context 和人臉觸發互動。
 
 模型：
 

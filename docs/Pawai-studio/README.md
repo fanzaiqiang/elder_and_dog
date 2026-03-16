@@ -5,8 +5,8 @@
 
 # PawAI Studio 設計文件
 
-**文件版本**：v2.0
-**最後更新**：2026-03-13
+**文件版本**：v2.1
+**最後更新**：2026-03-16
 **對齊來源**：[mission/README.md](../mission/README.md) v2.0
 
 ---
@@ -70,6 +70,26 @@
 | Event Bus | Redis (Pub/Sub + KV + Streams) | 事件總線 |
 | ROS2 橋接 | ros2_bridge_node | ROS2 Topics → Redis |
 | Mock | Mock Event Server (FastAPI) | 假資料生成，前端開發用 |
+
+---
+
+## 前端開發入口（2026-03-16 新增）
+
+**一鍵啟動**：`bash pawai-studio/start.sh`
+
+**每人獨立開發頁面**：
+
+| 負責人 | URL | Spec |
+|--------|-----|------|
+| 鄔 | `/studio/face` | `pawai-studio/docs/face-panel-spec.md` |
+| 陳 | `/studio/speech` | `pawai-studio/docs/speech-panel-spec.md` |
+| 黃 | `/studio/gesture` | `pawai-studio/docs/gesture-panel-spec.md` |
+| 楊 | `/studio/pose` | `pawai-studio/docs/pose-panel-spec.md` |
+| 全部整合 | `/studio` | — |
+
+**測試劇本**：`pawai-studio/docs/testing-playbook.md`
+**交接設計**：`docs/superpowers/specs/2026-03-16-studio-handoff-design.md`
+**Placeholder 圖**：`pawai-studio/frontend/public/mock/*.svg`（前端自行嵌入）
 
 ---
 

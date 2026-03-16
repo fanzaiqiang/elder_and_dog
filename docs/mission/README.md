@@ -658,15 +658,16 @@ Level 1: Standalone → Level 2: Node-level → Level 3: System-level → Level 
 | **L3** | 多 node 共存、gate/ack 有 timeout、Level B 驗收、clean/start 腳本、preflight 涵蓋 |
 | **L4** | Demo 流程文件、連續 3 次 cold start 成功、記憶體預算確認、降級策略、展示前 SOP |
 
-**模組整合等級快照（2026-03-15）：**
+**模組整合等級快照（2026-03-16 更新）：**
 
-| 模組 | 當前等級 | 下一步 |
-|------|:--------:|--------|
-| 語音（STT/TTS/Intent） | Level 3 | Level 4（Demo 穩定化） |
-| 人臉（YuNet/SFace） | Level 1 | Level 2（ROS2 node 化） |
-| AI 大腦（LLM） | 尚未開始 | Level 1（vLLM smoke test） |
-| 手勢 | 研究中 | — |
-| 姿勢 | 研究中 | — |
+| 模組 | 當前等級 | 下一步 | 備註 |
+|------|:--------:|--------|------|
+| 語音（STT/TTS/LLM Bridge） | Level 3 | Level 4（Jetson 真機 Demo） | llm_bridge_node 取代 intent_tts_bridge，Phase 1 通過 |
+| 人臉（YuNet/SFace） | Level 2 | Level 3（與語音整合測試） | 已加 /state/perception/face + /event/face_identity |
+| AI 大腦（Cloud LLM） | Level 1 | Level 2（Jetson 端到端） | Qwen3.5-9B on RTX 8000，vLLM serving，Phase 1 通過 |
+| PawAI Studio | Level 2 | Level 3（前端開發中） | Mock Server + 4 panel routes + placeholder + spec 交接完成 |
+| 手勢 | 研究中 | — | 等楊研究結論 |
+| 姿勢 | 研究中 | — | 等楊研究結論 |
 
 ### 11.6 多 Agent 並行開發流程
 

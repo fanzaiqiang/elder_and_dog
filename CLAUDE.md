@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **專題名稱：老人與狗 / PawAI**
 **硬底線：2026/4/13 展示**
-**當前日期：2026-03-13（Phase 1 基礎建設期尾端）**
+**當前日期：2026-03-16（LLM 鏈路已通，進入整合測試期）**
 
 以 Unitree Go2 Pro 為載體的 **embodied AI 互動陪伴平台**。核心是「人臉辨識 + 中文語音互動 + AI 大腦決策」，不是導航或尋物。
 
@@ -56,6 +56,26 @@ ros2 run speech_processor stt_intent_node --ros-args \
 ros2 run speech_processor intent_tts_bridge_node
 ros2 run speech_processor tts_node --ros-args -p provider:=piper \
   -p piper_model_path:=/home/jetson/models/piper/zh_CN-huayan-medium.onnx
+```
+
+### 語音 + LLM 主線（2026-03-16 新增）
+
+```bash
+# 先開 SSH tunnel 到 RTX 8000（Cloud LLM）
+ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5
+
+# 啟動 llm_bridge_node（取代 intent_tts_bridge_node）
+ros2 run speech_processor llm_bridge_node --ros-args \
+  -p llm_endpoint:="http://localhost:8000/v1/chat/completions"
+```
+
+### PawAI Studio（前端開發用）
+
+```bash
+# 從 repo 根目錄一鍵啟動
+bash pawai-studio/start.sh
+# → http://localhost:3000/studio
+# → Mock Server: http://localhost:8001
 ```
 
 ### 快速驗證 TTS → Go2 播放

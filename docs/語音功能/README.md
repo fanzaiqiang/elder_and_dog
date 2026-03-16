@@ -10,52 +10,53 @@
 
 ---
 
-## 今天先從這裡開始（MVP 起手）
+## 目前進度（2026-03-16 更新）
 
-先不要一次做完整 ASR+LLM+TTS。依照目前 repo 真實狀態，先把「TTS 鏈路可用」打通，因為 `speech_processor` 現在穩定存在的是 `tts_node`。
+### 已完成的鏈路
 
-### 目前程式現況（已存在）
-
-- 語音文件主檔：`docs/語音功能/README.md`
-- TTS node：`speech_processor/speech_processor/tts_node.py`
-- 套件 entrypoint：`speech_processor/setup.py`
-- Go2 launch 內可開關 TTS：`go2_robot_sdk/launch/robot.launch.py`（`enable_tts`）
-
-### Phase 1（今天必做）: 先驗證 TTS 端到端
-
-1. 在 Jetson build 指定套件
-
-```bash
-ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.bash && colcon build --packages-select speech_processor go2_robot_sdk"
+```
+使用者說話 → stt_intent_node (ASR + Intent) → llm_bridge_node (Cloud LLM) → tts_node (TTS) → Go2 播放
+人臉辨識 → identity_stable event → llm_bridge_node → tts_node → Go2 說出名字
 ```
 
-2. 啟動 Go2（先關掉不需要的模組，只開 TTS）
+Phase 1 假事件驗證已通過（語音 greet / 人臉 Roy / 語音 stop）。
+
+### 核心檔案
+
+| 檔案 | 用途 |
+|------|------|
+| `speech_processor/speech_processor/stt_intent_node.py` | ASR + Intent 分類（Energy VAD + faster-whisper + IntentClassifier） |
+| `speech_processor/speech_processor/llm_bridge_node.py` | **新** — 取代 intent_tts_bridge_node，呼叫 Cloud LLM（Qwen3.5-9B） |
+| `speech_processor/speech_processor/tts_node.py` | TTS 合成 + Go2 WebRTC 音訊播放 |
+| `speech_processor/speech_processor/intent_tts_bridge_node.py` | 舊版模板回覆（已被 llm_bridge_node 取代，保留作 fallback） |
+
+### llm_bridge_node 架構
+
+兩種觸發路徑：
+
+**Path A（語音觸發）**：`/event/speech_intent_recognized` → 組裝 user message（含人臉 context）→ Cloud LLM → `/tts` + `/webrtc_req`
+
+**Path B（人臉觸發）**：`/event/face_identity`（identity_stable + 具名）→ Cloud LLM → `/tts` + `/webrtc_req`（Go2 叫名字 + 揮手）
+
+LLM 失敗時 fallback 到 RuleBrain（模板回覆）。`stop_move` 立即發動作，不等 TTS。
+
+### Cloud LLM
+
+- **模型**：Qwen3.5-9B on RTX 8000（140.136.155.5:8000，需 SSH tunnel）
+- **API**：OpenAI-compatible（vLLM 原生）
+- **延遲**：~2-3 秒（預熱後）
+- **Spec**：`docs/superpowers/specs/2026-03-16-llm-integration-mini-spec.md`
+
+### 啟動方式
 
 ```bash
-ssh jetson-nano "cd /home/jetson/elder_and_dog && unset COLCON_CURRENT_PREFIX && source /opt/ros/humble/setup.bash && source install/setup.bash && export ROBOT_IP=<GO2_IP> && export CONN_TYPE=webrtc && export ELEVENLABS_API_KEY=<YOUR_KEY> && ros2 launch go2_robot_sdk robot.launch.py enable_tts:=true nav2:=false slam:=false rviz2:=false foxglove:=false"
+# 先開 SSH tunnel 到 RTX 8000
+ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5
+
+# 啟動 llm_bridge_node（取代 intent_tts_bridge_node）
+ros2 run speech_processor llm_bridge_node --ros-args \
+  -p llm_endpoint:="http://localhost:8000/v1/chat/completions"
 ```
-
-3. 另一個終端送測試句
-
-```bash
-ssh jetson-nano "cd /home/jetson/elder_and_dog && source /opt/ros/humble/setup.bash && source install/setup.bash && ros2 topic pub --once /tts std_msgs/msg/String '{data: \"哈囉，語音模組測試成功\"}'"
-```
-
-4. 驗收（至少滿足兩項）
-
-- `tts_node` log 出現 `TTS completed successfully`
-- Go2 有實際播音
-- `/webrtc_req` 有音訊分塊封包送出
-
-### Phase 2（明天接）: 補齊 STT/Intent 最小閉環
-
-目前 source tree 沒有 `speech_processor/speech_processor/stt_intent_node.py`，但 `speech_processor/setup.py` 已宣告 entrypoint `stt_intent_node`。下一步先補這個檔案，做最小版本：
-
-- 訂閱音訊或文字輸入
-- 輸出固定 intent topic（先做 3-5 個指令）
-- 接到 intent 後轉發 `/tts` 做回覆
-
-這樣可先形成「聽到（簡化）-> 理解（規則）-> 說話」的可展示閉環。
 
 ---
 

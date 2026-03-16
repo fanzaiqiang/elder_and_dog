@@ -148,6 +148,7 @@ class LlmBridgeNode(Node):
         self.declare_parameter("llm_model", "Qwen/Qwen3.5-9B")
         self.declare_parameter("llm_timeout", 5.0)
         self.declare_parameter("llm_temperature", 0.2)
+        self.declare_parameter("llm_max_tokens", 2000)
         self.declare_parameter("intent_event_topic", "/event/speech_intent_recognized")
         self.declare_parameter("face_event_topic", "/event/face_identity")
         self.declare_parameter("face_state_topic", "/state/perception/face")
@@ -173,6 +174,7 @@ class LlmBridgeNode(Node):
         self.llm_model = _str("llm_model")
         self.llm_timeout = _float("llm_timeout")
         self.llm_temperature = _float("llm_temperature")
+        self.llm_max_tokens = int(self.get_parameter("llm_max_tokens").get_parameter_value().integer_value)
         self.intent_event_topic = _str("intent_event_topic")
         self.face_event_topic = _str("face_event_topic")
         self.face_state_topic = _str("face_state_topic")
@@ -331,8 +333,7 @@ class LlmBridgeNode(Node):
                 {"role": "user", "content": user_message},
             ],
             "temperature": self.llm_temperature,
-            "max_tokens": 180,
-            "response_format": {"type": "json_object"},
+            "max_tokens": self.llm_max_tokens,
         }
 
         try:
@@ -358,6 +359,13 @@ class LlmBridgeNode(Node):
         try:
             data = resp.json()
             content = data["choices"][0]["message"]["content"]
+            # Strip markdown code fences (common with small local models)
+            content = content.strip()
+            if content.startswith("```"):
+                content = content.split("\n", 1)[-1]  # remove ```json line
+            if content.endswith("```"):
+                content = content.rsplit("```", 1)[0]
+            content = content.strip()
             result = json.loads(content)
         except (KeyError, IndexError, json.JSONDecodeError) as exc:
             self.last_error = f"LLM response parse error: {exc}"

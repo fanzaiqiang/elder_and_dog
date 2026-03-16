@@ -11,8 +11,8 @@ const PRESET_PANELS: Record<LayoutPreset, PanelId[]> = {
   chat_camera_speech: ["chat", "camera", "speech"],
   chat_gesture: ["chat", "gesture"],
   chat_pose: ["chat", "pose"],
-  chat_full: ["chat", "camera", "speech", "brain"],
-  demo: ["chat", "camera", "speech", "brain"],
+  chat_full: ["chat", "face", "speech", "gesture", "pose"],
+  demo: ["chat", "camera", "face", "speech"],
 };
 
 const MAX_PANELS = 4;

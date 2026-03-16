@@ -11,4 +11,9 @@ go2_robot_sdk/coverage.xml
 .env.*.local
 .venv310/
 .claude/test_results/*.csv
+.claude/settings.local.json
+.claude/skills/
 test_results/*.json
+.coverage
+coverage.xml
+PROJECT_MAP.md

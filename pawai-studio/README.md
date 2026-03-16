@@ -49,12 +49,15 @@ curl -X POST http://localhost:8001/mock/scenario/demo_a
 
 ## 分工速查表
 
-| 負責人 | Panel | Spec | 可改檔案 |
-|--------|-------|------|----------|
-| 鄔 | FacePanel | [docs/face-panel-spec.md](docs/face-panel-spec.md) | `frontend/components/face/*` |
-| 陳 | SpeechPanel | [docs/speech-panel-spec.md](docs/speech-panel-spec.md) | `frontend/components/speech/*` |
-| 黃 | GesturePanel | [docs/gesture-panel-spec.md](docs/gesture-panel-spec.md) | `frontend/components/gesture/*` |
-| 楊 | PosePanel | [docs/pose-panel-spec.md](docs/pose-panel-spec.md) | `frontend/components/pose/*` |
+| 負責人 | Panel | 開發頁面 | Spec | 可改檔案 |
+|--------|-------|---------|------|----------|
+| 鄔 | FacePanel | [/studio/face](http://localhost:3000/studio/face) | [face-panel-spec.md](docs/face-panel-spec.md) | `frontend/components/face/*` |
+| 陳 | SpeechPanel | [/studio/speech](http://localhost:3000/studio/speech) | [speech-panel-spec.md](docs/speech-panel-spec.md) | `frontend/components/speech/*` |
+| 黃 | GesturePanel | [/studio/gesture](http://localhost:3000/studio/gesture) | [gesture-panel-spec.md](docs/gesture-panel-spec.md) | `frontend/components/gesture/*` |
+| 楊 | PosePanel | [/studio/pose](http://localhost:3000/studio/pose) | [pose-panel-spec.md](docs/pose-panel-spec.md) | `frontend/components/pose/*` |
+
+每個人有自己的獨立開發頁面，panel 會放大顯示在主區域，方便開發和預覽。
+全部 panel 的整合效果在 [/studio](http://localhost:3000/studio)。
 
 > **共用元件（`shared/`、`hooks/`、`stores/`、`layout/`）不得直接修改。**
 > 若需新增或擴充共用元件，先提 Issue。

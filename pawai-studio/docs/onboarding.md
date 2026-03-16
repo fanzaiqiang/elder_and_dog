@@ -52,15 +52,20 @@ Mock Server 提供與真實 Gateway 完全相同的 WebSocket / REST 介面。
 
 ---
 
-## Step 3：找到你的 Panel
+## Step 3：打開你的開發頁面
 
-你的檔案在：
+每個人有自己的獨立頁面，Panel 會放大顯示在主區域：
 
-```
-frontend/components/<你的功能>/<你的功能>-panel.tsx
-```
+| 負責人 | 頁面 | 你要改的檔案 |
+|--------|------|-------------|
+| 鄔 | http://localhost:3000/studio/face | `frontend/components/face/face-panel.tsx` |
+| 陳 | http://localhost:3000/studio/speech | `frontend/components/speech/speech-panel.tsx` |
+| 黃 | http://localhost:3000/studio/gesture | `frontend/components/gesture/gesture-panel.tsx` |
+| 楊 | http://localhost:3000/studio/pose | `frontend/components/pose/pose-panel.tsx` |
 
-例如鄔負責 FacePanel → `frontend/components/face/face-panel.tsx`
+改了存檔 → 瀏覽器自動刷新（Hot Reload）。
+
+全部 Panel 的整合效果在 http://localhost:3000/studio。
 
 ---
 

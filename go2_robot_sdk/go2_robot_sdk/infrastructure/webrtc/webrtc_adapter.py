@@ -10,7 +10,8 @@ from ...domain.interfaces import IRobotDataReceiver, IRobotController
 from ...domain.entities import RobotData, RobotConfig
 from .go2_connection import Go2Connection
 from ...application.utils.command_generator import gen_command, gen_mov_command
-from ...domain.constants import ROBOT_CMD, RTC_TOPIC
+from ...domain.constants import ROBOT_CMD, RTC_TOPIC, AUDIO_HUB_COMMANDS
+from .go2_connection import ConnectionHealth
 
 logger = logging.getLogger(__name__)
 
@@ -131,10 +132,45 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
             return self.main_loop
 
     async def _async_send_command(self, connection, command: str):
-        """Async wrapper for sending commands"""
+        """Async wrapper for sending commands with observability"""
         try:
             if hasattr(connection, 'data_channel') and connection.data_channel:
-                connection.data_channel.send(command)
+                dc = connection.data_channel
+                state = dc.readyState if hasattr(dc, 'readyState') else 'unknown'
+
+                if state != "open":
+                    logger.warning(f"[DC SEND] Cannot send: dc_state={state}")
+                    return
+
+                # Parse api_id for audio command logging
+                _api = 0
+                try:
+                    _cmd = json.loads(command) if isinstance(command, str) else {}
+                    _api = _cmd.get('data', {}).get('header', {}).get('identity', {}).get('api_id', 0)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+                buffered_before = getattr(dc, 'bufferedAmount', None)
+                dc.send(command)
+                buffered_after = getattr(dc, 'bufferedAmount', None)
+
+                # Detailed log for audio commands
+                _audio_ids = set(AUDIO_HUB_COMMANDS.values())
+                if _api in _audio_ids:
+                    _payload_len = len(command) if isinstance(command, (bytes, str)) else "?"
+                    logger.info(
+                        f"[AUDIO DEBUG] dc_state={state} api_id={_api} "
+                        f"payload_len={_payload_len} buffered={buffered_before}→{buffered_after}"
+                    )
+
+                # Buffer backlog alerts
+                if buffered_after is not None:
+                    if buffered_after > 512_000:
+                        logger.error(f"[DC BUFFER] bufferedAmount={buffered_after} — CRITICAL backlog")
+                    elif buffered_after > 64_000:
+                        logger.warning(f"[DC BUFFER] bufferedAmount={buffered_after} — backlogged")
+            else:
+                logger.warning("[DC SEND] No data channel on connection!")
         except Exception as e:
             logger.error(f"Error in async send command: {e}")
 
@@ -191,6 +227,13 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
             except asyncio.QueueEmpty:
                 break
 
+    def get_connection_health(self, robot_id: str = "0"):
+        """Get thread-safe health snapshot for a robot connection."""
+        conn = self.connections.get(robot_id)
+        if conn is None:
+            return None
+        return conn.health  # Returns a copy via @property
+
     def _on_validated(self, robot_id: str) -> None:
         """Callback after connection validation"""
         try:
@@ -209,6 +252,9 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
 
                 if self.config.enable_lidar or self.config.decode_lidar or self.config.publish_raw_voxel:
                     subscription_topics.append(RTC_TOPIC["ULIDAR_ARRAY"])
+
+                # Subscribe to audiohub player state for playback observability
+                subscription_topics.append(RTC_TOPIC["AUDIO_HUB_PLAY_STATE"])
 
                 for topic in subscription_topics:
                     self.connections[robot_id].data_channel.send(

@@ -13,15 +13,37 @@ import asyncio
 import json
 import logging
 import base64
+import threading
+import time as _time
+from dataclasses import dataclass, replace as _dc_replace
 from typing import Callable, Optional, Any, Dict, Union
 from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
+import aioice.ice
+aioice.ice.CONSENT_FAILURES = 999  # Go2 firmware doesn't respond to STUN consent probes
 
 from .crypto.encryption import CryptoUtils, ValidationCrypto, PathCalculator, EncryptionError
 from .http_client import HttpClient, WebRTCHttpError
 from .data_decoder import WebRTCDataDecoder, DataDecodingError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from ...domain.constants import RTC_TOPIC
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ConnectionHealth:
+    """Thread-safe health snapshot for Go2 WebRTC connection."""
+    dc_state: str = "closed"
+    connection_state: str = "new"
+    validated: bool = False
+    last_response_ts: float = 0.0
+    last_heartbeat_ts: float = 0.0
+    last_msg_type: str = ""
+    last_audio_state: str = "unknown"
+    last_audio_state_ts: float = 0.0
+    error_count: int = 0
+    last_error: str = ""
+    connected_at: float = 0.0
 
 
 class Go2ConnectionError(Exception):
@@ -65,6 +87,10 @@ class Go2Connection:
         # Initialize components
         self.http_client = HttpClient(timeout=10.0)
         self.data_decoder = WebRTCDataDecoder(enable_lidar_decoding=decode_lidar)
+
+        # Connection health tracking (thread-safe)
+        self._health = ConnectionHealth()
+        self._health_lock = threading.Lock()
         
         # Setup data channel
         self.data_channel = self.pc.createDataChannel("data", id=0)
@@ -85,9 +111,17 @@ class Go2Connection:
         if self.on_video_frame:
             self.pc.addTransceiver("video", direction="recvonly")
     
+    @property
+    def health(self) -> ConnectionHealth:
+        """Return a thread-safe copy of connection health."""
+        with self._health_lock:
+            return _dc_replace(self._health)
+
     def on_connection_state_change(self) -> None:
         """Handle peer connection state changes"""
         state = self.pc.connectionState
+        with self._health_lock:
+            self._health.connection_state = state
         # 只在關鍵狀態變化時用 INFO
         if state in ("connected", "failed", "closed"):
             logger.info(f"Connection state: {state}")
@@ -113,6 +147,8 @@ class Go2Connection:
     def on_data_channel_close(self) -> None:
         """Handle data channel close event"""
         logger.warning(f"Data channel closed. State: {self.data_channel.readyState}")
+        with self._health_lock:
+            self._health.dc_state = "closed"
 
     def on_data_channel_error(self, error: Exception) -> None:
         """Handle data channel error event"""
@@ -130,41 +166,87 @@ class Go2Connection:
             logger.warning(f"[診斷] ⚠️  Data channel readyState was {self.data_channel.readyState}, forcing to open")
             self.data_channel._setReadyState("open")
 
+        with self._health_lock:
+            self._health.dc_state = "open"
+            self._health.connected_at = _time.time()
+
         if self.on_open:
             self.on_open()
-    
+
     def on_data_channel_message(self, message: Union[str, bytes]) -> None:
-        """Handle incoming data channel messages"""
+        """Receive and classify all Go2 DataChannel messages."""
         try:
-            # 避免在 DEBUG 模式下把整個二進位封包 dump 出來（voxel_map 會非常大）
-            if isinstance(message, bytes):
-                logger.debug("Received binary message (%d bytes)", len(message))
-            else:
-                logger.debug(f"Received message: {message}")
-            
             # Ensure data channel is marked as open
             if self.data_channel.readyState != "open":
                 self.data_channel._setReadyState("open")
-            
-            msgobj = None
-            
-            if isinstance(message, str):
-                # Text message - likely JSON
-                try:
-                    msgobj = json.loads(message)
-                    if msgobj.get("type") == "validation":
-                        self.validate_robot_conn(msgobj)
-                except json.JSONDecodeError:
-                    logger.warning("Failed to decode JSON message")
-                    
-            elif isinstance(message, bytes):
-                # Binary message - likely compressed data
+
+            # Binary messages — existing logic unchanged
+            if isinstance(message, bytes):
+                logger.debug("Received binary message (%d bytes)", len(message))
                 msgobj = legacy_deal_array_buffer(message, perform_decode=self.decode_lidar)
-            
-            # Forward message to callback
+                if self.on_message:
+                    try:
+                        self.on_message(message, msgobj, self.robot_num)
+                    except Exception as e:
+                        logger.warning(f"[GO2 CALLBACK] on_message failed for binary: {e}")
+                return
+
+            # String messages — parse JSON with defense
+            try:
+                msgobj = json.loads(message)
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning(f"[GO2 PARSE] Bad JSON from Go2: {e}")
+                return
+
+            msg_type = msgobj.get("type", "unknown")
+            topic = msgobj.get("topic", "")
+            data = msgobj.get("data", {})
+
+            # --- Classify and log by msg_type ---
+            if msg_type == "validation":
+                self.validate_robot_conn(msgobj)
+            elif msg_type == "response":
+                header = data.get("header", {}) if isinstance(data, dict) else {}
+                api_id = header.get("identity", {}).get("api_id", 0)
+                # Try data.data.code first, fallback data.code
+                inner = data.get("data", {}) if isinstance(data, dict) else {}
+                code = inner.get("code") if isinstance(inner, dict) else None
+                if code is None and isinstance(data, dict):
+                    code = data.get("code")
+                logger.info(f"[GO2 RESPONSE] api_id={api_id} code={code} topic={topic}")
+                with self._health_lock:
+                    self._health.last_response_ts = _time.time()
+                    self._health.last_msg_type = "response"
+            elif msg_type == "heartbeat":
+                logger.debug(f"[GO2 HEARTBEAT] topic={topic}")
+                with self._health_lock:
+                    self._health.last_heartbeat_ts = _time.time()
+                    self._health.last_msg_type = "heartbeat"
+            elif msg_type in ("errors", "err"):
+                logger.warning(f"[GO2 ERROR] type={msg_type} data={data}")
+                with self._health_lock:
+                    self._health.error_count += 1
+                    self._health.last_error = str(data)[:200]
+                    self._health.last_msg_type = msg_type
+            else:
+                logger.debug(f"[GO2 MSG] type={msg_type} topic={topic}")
+
+            # --- Independent topic check (not elif — can overlap with msg_type) ---
+            audio_state_topic = RTC_TOPIC.get("AUDIO_HUB_PLAY_STATE", "")
+            if audio_state_topic and topic == audio_state_topic:
+                audio_data = data.get("data", data) if isinstance(data, dict) else data
+                logger.info(f"[GO2 AUDIO STATE] {audio_data}")
+                with self._health_lock:
+                    self._health.last_audio_state = str(audio_data)
+                    self._health.last_audio_state_ts = _time.time()
+
+            # --- Forward to callback (protected) ---
             if self.on_message:
-                self.on_message(message, msgobj, self.robot_num)
-                
+                try:
+                    self.on_message(message, msgobj, self.robot_num)
+                except Exception as e:
+                    logger.warning(f"[GO2 CALLBACK] on_message failed: {e}")
+
         except Exception as e:
             logger.error(f"Error processing data channel message: {e}")
     
@@ -189,6 +271,8 @@ class Go2Connection:
                 
                 self.validation_result = "SUCCESS"
                 self.robot_validation = "OK"
+                with self._health_lock:
+                    self._health.validated = True
                 
                 if self.on_validated:
                     self.on_validated(self.robot_num)

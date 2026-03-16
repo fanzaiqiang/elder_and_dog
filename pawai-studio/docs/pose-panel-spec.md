@@ -4,6 +4,40 @@
 > 參考實作：[../frontend/components/chat/chat-panel.tsx](../frontend/components/chat/chat-panel.tsx)
 > Design Tokens：[design-tokens.md](design-tokens.md)
 
+### 共用文件（必讀）
+
+| 文件 | 用途 |
+|------|------|
+| [testing-playbook.md](testing-playbook.md) | 啟動方式、觸發指令、常見問題 |
+| [../../docs/superpowers/specs/2026-03-16-studio-handoff-design.md](../../docs/superpowers/specs/2026-03-16-studio-handoff-design.md) | 交接規則、責任切分、placeholder 規格 |
+
+### Placeholder 圖
+
+Placeholder 圖在 `frontend/public/mock/pose-placeholder.svg`。
+**由你自己嵌入你的 panel**，後端不會動你的 .tsx。
+
+嵌入方式：
+```tsx
+const PLACEHOLDER_SRC = "/mock/pose-placeholder.svg"
+const SHOW_PLACEHOLDER = true  // M2 時改 false，換成真實元件
+
+{SHOW_PLACEHOLDER && (
+  <div className="rounded-lg overflow-hidden border border-border/20">
+    <img src={PLACEHOLDER_SRC} alt="pose placeholder" className="w-full h-auto" />
+  </div>
+)}
+```
+
+Placeholder 只用於版面開發，不代表最終資料呈現方式。以本 spec 為設計依據。
+
+### 你的開發頁面
+
+http://localhost:3000/studio/pose
+
+### 觸發測試事件
+
+見 [testing-playbook.md](testing-playbook.md) 的 pose 欄。
+
 ---
 
 ## 1. 目標

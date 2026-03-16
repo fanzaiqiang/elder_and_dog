@@ -64,57 +64,75 @@ def _uid() -> str:
     return str(uuid.uuid4())
 
 def mock_face_event() -> dict:
-    names = ["小明", "小華", "unknown"]
-    name = random.choice(names)
+    """Push both a face identity event AND a face state snapshot."""
+    names = ["小明", "小華", "Roy"]
+    tracks = []
+    n = random.randint(1, 3)
+    for i in range(n):
+        tracks.append(FaceTrack(
+            track_id=i + 1,
+            stable_name=random.choice(names) if random.random() > 0.3 else "unknown",
+            sim=round(random.uniform(0.2, 0.95), 2),
+            distance_m=round(random.uniform(0.5, 3.0), 1),
+            bbox=(100 + i * 150, 100, 200 + i * 150, 280),
+            mode=random.choice(["stable", "hold"]),
+        ))
+    # Push as face state (has face_count → triggers faceState update in frontend)
     return PawAIEvent(
         id=_uid(), timestamp=_ts(), source="face",
         event_type=random.choice(["track_started", "identity_stable", "track_lost"]),
-        data=FaceIdentityData(
-            track_id=random.randint(1, 10),
-            stable_name=name,
-            sim=round(random.uniform(0.3, 0.98), 2),
-            distance_m=round(random.uniform(0.5, 3.0), 1),
+        data=FaceState(
+            stamp=time.time(),
+            face_count=len(tracks),
+            tracks=tracks,
         ).model_dump(),
     ).model_dump()
 
 def mock_speech_event() -> dict:
-    intents = [
-        ("greet", "你好"),
-        ("come_here", "過來"),
-        ("stop", "停止"),
-        ("take_photo", "幫我拍照"),
-        ("status", "你好嗎"),
-    ]
-    intent, text = random.choice(intents)
+    phases = ["idle_wakeword", "listening", "transcribing", "speaking", "keep_alive"]
+    intents = ["greet", "stop", "status", "come_here"]
+    texts = ["你好", "停止", "你好嗎", "過來"]
+    idx = random.randint(0, len(intents) - 1)
     return PawAIEvent(
         id=_uid(), timestamp=_ts(), source="speech",
         event_type="intent_recognized",
-        data=SpeechIntentData(
-            intent=intent, text=text,
-            confidence=round(random.uniform(0.7, 0.99), 2),
-            provider="whisper_local",
+        data=SpeechState(
+            stamp=time.time(),
+            phase=random.choice(phases),
+            last_asr_text=texts[idx],
+            last_intent=intents[idx],
+            last_tts_text=f"收到，{texts[idx]}",
+            models_loaded=["kws", "asr", "tts"],
         ).model_dump(),
     ).model_dump()
 
 def mock_gesture_event() -> dict:
+    gesture = random.choice(["wave", "stop", "point", "ok"])
     return PawAIEvent(
         id=_uid(), timestamp=_ts(), source="gesture",
         event_type="gesture_detected",
-        data=GestureData(
-            gesture=random.choice(["wave", "stop", "point", "ok"]),
+        data=GestureState(
+            stamp=time.time(),
+            active=True,
+            current_gesture=gesture,
             confidence=round(random.uniform(0.7, 0.95), 2),
             hand=random.choice(["left", "right"]),
+            status="active",
         ).model_dump(),
     ).model_dump()
 
 def mock_pose_event() -> dict:
+    pose = random.choice(["standing", "sitting", "crouching", "fallen"])
     return PawAIEvent(
         id=_uid(), timestamp=_ts(), source="pose",
         event_type="pose_detected",
-        data=PoseData(
-            pose=random.choice(["standing", "sitting", "crouching", "fallen"]),
+        data=PoseState(
+            stamp=time.time(),
+            active=True,
+            current_pose=pose,
             confidence=round(random.uniform(0.75, 0.98), 2),
             track_id=random.randint(1, 5),
+            status="active",
         ).model_dump(),
     ).model_dump()
 

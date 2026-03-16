@@ -1,13 +1,28 @@
 'use client'
 
-import { User } from 'lucide-react'
+import { User, UserX } from 'lucide-react'
 import { PanelCard } from '@/components/shared/panel-card'
-import { MetricChip } from '@/components/shared/metric-chip'
+import { EventItem } from '@/components/shared/event-item'
+import { useMemo } from 'react'
 import { useStateStore } from '@/stores/state-store'
+import { useEventStore } from '@/stores/event-store'
+import { FaceTrackCard } from './face-track-card'
 import type { FaceState } from '@/contracts/types'
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  track_started: '新追蹤',
+  identity_stable: '身份確認',
+  identity_changed: '身份變更',
+  track_lost: '追蹤消失',
+}
 
 export function FacePanel() {
   const faceState = useStateStore((s) => s.faceState) as FaceState | null
+  const allEvents = useEventStore((s) => s.events)
+  const faceEvents = useMemo(
+    () => allEvents.filter((e) => e.source === 'face').slice(-10),
+    [allEvents]
+  )
 
   const status = !faceState
     ? 'inactive' as const
@@ -24,32 +39,45 @@ export function FacePanel() {
       status={status}
       count={faceState?.face_count}
     >
-      {tracks.length === 0 ? (
-        <div className="py-4 text-center text-muted-foreground text-sm">
-          等待人臉偵測...
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {tracks.map((t) => (
-            <div key={t.track_id} className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">
-                  {t.stable_name === 'unknown' ? '未知人物' : t.stable_name}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Track #{t.track_id} · {t.mode === 'stable' ? '已穩定' : '辨識中'}
-                </span>
-              </div>
-              <div className="flex gap-1.5">
-                <MetricChip label="相似度" value={Math.round(t.sim * 100)} unit="%" />
-                {t.distance_m != null && (
-                  <MetricChip label="距離" value={Number(t.distance_m.toFixed(1))} unit="m" />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-col gap-3">
+        {/* Track list */}
+        {tracks.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {tracks.map((t) => (
+              <FaceTrackCard key={t.track_id} track={t} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-6 gap-2 text-muted-foreground">
+            <UserX className="h-8 w-8 opacity-40" />
+            <span className="text-sm">尚未偵測到人臉</span>
+          </div>
+        )}
+
+        {/* Event history */}
+        {faceEvents.length > 0 && (
+          <div className="flex flex-col gap-1 border-t border-border/30 pt-2 mt-1">
+            <span className="text-xs text-muted-foreground mb-1">最近事件</span>
+            {faceEvents.map((e) => {
+              const data = e.data as Record<string, unknown>
+              const name = String(data.stable_name ?? '')
+              const sim = Number(data.sim ?? 0)
+              const summary = name
+                ? `${name}（${Math.round(sim * 100)}%）`
+                : ''
+              return (
+                <EventItem
+                  key={e.id}
+                  timestamp={new Date(e.timestamp).toLocaleTimeString('zh-TW', { hour12: false })}
+                  eventType={EVENT_TYPE_LABELS[e.event_type] ?? e.event_type}
+                  source={e.source}
+                  summary={summary}
+                />
+              )
+            })}
+          </div>
+        )}
+      </div>
     </PanelCard>
   )
 }

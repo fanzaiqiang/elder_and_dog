@@ -57,10 +57,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
   # Custom services
   "srv/MoveForDuration.srv"
-
-  # Custom actions
-  "action/ExecuteSkill.action"
-
   DEPENDENCIES builtin_interfaces geometry_msgs
 )
 

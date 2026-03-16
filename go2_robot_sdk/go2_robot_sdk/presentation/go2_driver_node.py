@@ -21,6 +21,7 @@ from geometry_msgs.msg import Twist, PoseStamped
 # Hook 測試：修改 src/ 下的檔案，應該會觸發 flake8 檢查
 from go2_interfaces.msg import Go2State, IMU
 from go2_interfaces.msg import LowState, VoxelMapCompressed, WebRtcReq
+from std_msgs.msg import UInt8MultiArray
 from sensor_msgs.msg import (
     PointCloud2,
     JointState,
@@ -83,6 +84,14 @@ class Go2DriverNode(Node):
 
         # Set callback for data
         self.webrtc_adapter.set_data_callback(self._on_robot_data_received)
+
+        # Experimental: TTS audio raw subscriber (audio_track path, not contract topic)
+        self.create_subscription(
+            UInt8MultiArray,
+            "/tts_audio_raw",
+            self._on_tts_audio_raw,
+            10,
+        )
 
         # Subscribers initialization
         self._setup_subscribers()
@@ -384,6 +393,12 @@ class Go2DriverNode(Node):
         self.robot_control_service.handle_webrtc_request(
             msg.api_id, msg.parameter, msg.topic, msg.id, robot_id
         )
+
+    def _on_tts_audio_raw(self, msg: UInt8MultiArray) -> None:
+        """Experimental: receive raw WAV bytes and play via WebRTC audio track."""
+        wav_bytes = bytes(msg.data)
+        self.get_logger().info(f"[TTS AUDIO RAW] Received {len(wav_bytes)} bytes")
+        self.webrtc_adapter.play_tts_audio("0", wav_bytes)
 
     def _on_joy(self, msg: Joy) -> None:
         """Callback for joystick"""

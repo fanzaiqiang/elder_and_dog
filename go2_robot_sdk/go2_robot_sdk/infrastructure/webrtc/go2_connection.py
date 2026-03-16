@@ -26,6 +26,7 @@ from .http_client import HttpClient, WebRTCHttpError
 from .data_decoder import WebRTCDataDecoder, DataDecodingError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from ...domain.constants import RTC_TOPIC
+from .tts_audio_track import TtsAudioTrack
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class Go2Connection:
         on_open: Optional[Callable] = None,
         on_video_frame: Optional[Callable] = None,
         decode_lidar: bool = True,
+        enable_audio_track: bool = True,
     ):
         # 使用預設 RTCPeerConnection 配置（不帶 STUN）
         # 在同一 LAN 內，host candidates 通常足夠；STUN 可能在某些 aiortc 版本導致 SCTP 握手問題
@@ -91,7 +93,16 @@ class Go2Connection:
         # Connection health tracking (thread-safe)
         self._health = ConnectionHealth()
         self._health_lock = threading.Lock()
-        
+
+        # Audio track for TTS playback (must be before createOffer/createDataChannel)
+        self._tts_track: Optional[TtsAudioTrack] = None
+        if enable_audio_track:
+            self._tts_track = TtsAudioTrack(sample_rate=48000)
+            # addTrack alone creates a sendonly transceiver implicitly
+            # (addTransceiver sendrecv on aiortc 1.3.0 breaks SCTP handshake)
+            self.pc.addTrack(self._tts_track)
+            logger.info("Audio track enabled (sendonly via addTrack)")
+
         # Setup data channel
         self.data_channel = self.pc.createDataChannel("data", id=0)
         self.data_channel.on("open", self.on_data_channel_open)
@@ -251,10 +262,13 @@ class Go2Connection:
             logger.error(f"Error processing data channel message: {e}")
     
     async def on_track(self, track: MediaStreamTrack) -> None:
-        """Handle incoming media tracks (video)"""
-        logger.info("Receiving video")
-        
+        """Handle incoming media tracks (video/audio)"""
+        if track.kind == "audio":
+            logger.info("Receiving audio track from Go2 (not consuming)")
+            return
+
         if track.kind == "video" and self.on_video_frame:
+            logger.info("Receiving video")
             try:
                 await self.on_video_frame(track, self.robot_num)
             except Exception as e:

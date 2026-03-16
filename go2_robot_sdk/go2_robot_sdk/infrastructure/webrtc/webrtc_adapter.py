@@ -49,6 +49,7 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
                 on_message=self._on_data_channel_message,
                 on_video_frame=self.on_video_frame_callback if self.config.enable_video else None,
                 decode_lidar=self.config.decode_lidar,
+                enable_audio_track=True,
             )
             
             self.connections[robot_id] = conn
@@ -226,6 +227,24 @@ class WebRTCAdapter(IRobotDataReceiver, IRobotController):
                     self.webrtc_msgs.task_done()
             except asyncio.QueueEmpty:
                 break
+
+    def play_tts_audio(self, robot_id: str, wav_bytes: bytes) -> None:
+        """Send TTS audio via WebRTC audio track (experimental)."""
+        conn = self.connections.get(robot_id)
+        if conn is None:
+            logger.warning("[AUDIO TRACK] No connection for robot %s (keys=%s)", robot_id, list(self.connections.keys()))
+            return
+        tts_track = getattr(conn, '_tts_track', None)
+        if tts_track is None:
+            logger.warning("[AUDIO TRACK] Connection has no _tts_track for robot %s", robot_id)
+            return
+
+        loop = self._get_or_create_event_loop()
+        if loop and loop.is_running():
+            conn._tts_track.enqueue_audio_threadsafe(wav_bytes, loop)
+            logger.info("[AUDIO TRACK] Enqueued TTS audio for robot %s", robot_id)
+        else:
+            logger.error("[AUDIO TRACK] No running event loop for audio playback")
 
     def get_connection_health(self, robot_id: str = "0"):
         """Get thread-safe health snapshot for a robot connection."""

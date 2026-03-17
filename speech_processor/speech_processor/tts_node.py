@@ -812,7 +812,7 @@ class EnhancedTTSNode(Node):
                 "total_block_number": total_chunks,
             }
             self._send_audio_command(4003, json.dumps(audio_block))
-            time.sleep(0.1)  # 100ms interval (aligned with community)
+            time.sleep(0.07)  # 70ms interval (50ms intermittent, 100ms too slow)
 
         self.get_logger().info(f"Waiting for playback ({duration:.1f}s)...")
         time.sleep(max(0.0, duration + self.config.robot_playback_tail_sec))

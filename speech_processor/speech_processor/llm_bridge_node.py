@@ -107,7 +107,7 @@ SYSTEM_PROMPT = """\
 JSON 必須包含以下五個欄位：
 
 intent — 只能是以下之一：greet, stop, status, chat, ignored
-reply_text — 你要說的中文回覆（簡短自然，15-40字。人臉事件時要叫出對方名字）
+reply_text — 你要說的中文回覆（一句話，不超過 25 字。人臉事件時要叫出對方名字）
 selected_skill — 只能是以下之一："hello", "stop_move", null
 reasoning — 一句話決策摘要，不超過 20 字
 confidence — 0.0 到 1.0
@@ -118,7 +118,7 @@ confidence — 0.0 到 1.0
 - 聽到「停」或「stop」：intent=stop，selected_skill 必須是 "stop_move"，reply_text 可以是空字串
 - 聽到問狀態：intent=status，selected_skill=null
 - 不確定時：intent=chat，selected_skill=null
-- reply_text 不超過 50 字
+- reply_text 不超過 25 字
 - 除了 JSON 不要輸出任何文字"""
 
 
@@ -179,7 +179,7 @@ class LlmBridgeNode(Node):
         self.declare_parameter("llm_model", "Qwen/Qwen3.5-9B")
         self.declare_parameter("llm_timeout", 15.0)
         self.declare_parameter("llm_temperature", 0.2)
-        self.declare_parameter("llm_max_tokens", 300)
+        self.declare_parameter("llm_max_tokens", 120)
         self.declare_parameter("intent_event_topic", "/event/speech_intent_recognized")
         self.declare_parameter("face_event_topic", "/event/face_identity")
         self.declare_parameter("face_state_topic", "/state/perception/face")

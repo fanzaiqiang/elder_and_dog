@@ -99,7 +99,7 @@ class TTSConfig:
     cache_dir: str = "tts_cache"
     chunk_size: int = 16 * 1024
     robot_chunk_interval_sec: float = 0.02
-    robot_playback_tail_sec: float = 0.2
+    robot_playback_tail_sec: float = 0.5
     robot_volume: int = 80
     playback_method: str = "datachannel"  # "datachannel" (Megaphone) or "audio_track"
     audio_quality: str = "standard"  # standard, high
@@ -478,7 +478,7 @@ class EnhancedTTSNode(Node):
         self.declare_parameter("cache_dir", "tts_cache")
         self.declare_parameter("chunk_size", 16384)
         self.declare_parameter("robot_chunk_interval_sec", 0.02)
-        self.declare_parameter("robot_playback_tail_sec", 0.2)
+        self.declare_parameter("robot_playback_tail_sec", 0.5)
         self.declare_parameter("robot_volume", 80)
         self.declare_parameter("playback_method", "datachannel")
         self.declare_parameter("audio_quality", "standard")
@@ -803,25 +803,25 @@ class EnhancedTTSNode(Node):
         self._send_audio_command(4001, json.dumps({}))
         time.sleep(0.1)
 
-        # Upload chunks
-        for chunk_idx, chunk in enumerate(chunks, 1):
-            audio_block = {
-                "current_block_size": len(chunk),
-                "block_content": chunk,
-                "current_block_index": chunk_idx,
-                "total_block_number": total_chunks,
-            }
-            self._send_audio_command(4003, json.dumps(audio_block))
-            time.sleep(0.07)  # 70ms interval (50ms intermittent, 100ms too slow)
+        try:
+            # Upload chunks
+            for chunk_idx, chunk in enumerate(chunks, 1):
+                audio_block = {
+                    "current_block_size": len(chunk),
+                    "block_content": chunk,
+                    "current_block_index": chunk_idx,
+                    "total_block_number": total_chunks,
+                }
+                self._send_audio_command(4003, json.dumps(audio_block))
+                time.sleep(0.07)  # 70ms interval
 
-        self.get_logger().info(f"Waiting for playback ({duration:.1f}s)...")
-        time.sleep(max(0.0, duration + self.config.robot_playback_tail_sec))
-
-        # Exit megaphone mode
-        self._send_audio_command(4002, json.dumps({}))
-
-        self._publish_tts_playing(False)
-        self.get_logger().info("Megaphone playback completed")
+            self.get_logger().info(f"Waiting for playback ({duration:.1f}s)...")
+            time.sleep(max(0.0, duration + self.config.robot_playback_tail_sec))
+        finally:
+            # ALWAYS send EXIT — if skipped, Go2 stays in ENTER state and goes silent
+            self._send_audio_command(4002, json.dumps({}))
+            self._publish_tts_playing(False)
+            self.get_logger().info("Megaphone playback completed")
 
     def _send_audio_command(self, api_id: int, parameter: str) -> None:
         """Send audio command to robot"""

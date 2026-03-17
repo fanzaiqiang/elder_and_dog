@@ -142,7 +142,38 @@ source /opt/ros/humble/setup.bash
 
 ---
 
-## 標準啟動（Jetson，建議）
+## ROS2 Package 啟動（推薦）
+
+```bash
+# 前提：已 colcon build --packages-select face_perception && source install/setup.zsh
+
+# 一鍵啟動（camera + node + foxglove_bridge）
+bash scripts/start_face_identity_tmux.sh
+
+# 或手動 launch（需另外啟動 camera 和 foxglove_bridge）
+ros2 launch face_perception face_perception.launch.py
+
+# 自訂 config
+ros2 launch face_perception face_perception.launch.py \
+  config_file:=/path/to/custom.yaml
+
+# 單獨啟動 node（不用 launch file）
+ros2 run face_perception face_identity_node --ros-args \
+  -p det_score_threshold:=0.35 \
+  -p headless:=true
+```
+
+清場：
+
+```bash
+bash scripts/clean_face_env.sh --all
+```
+
+> **Fallback**：若 ROS2 package 有問題，原始 script 仍可用（見下方「手動啟動」章節）。
+
+---
+
+## 手動啟動（Fallback / 舊方式）
 
 先清場：
 
@@ -229,6 +260,28 @@ ps -eo pid,pcpu,pmem,cmd --sort=-pcpu | head -n 15
 
 ## 後續（下一輪）
 
-- 再整理成 `start_face_identity.sh` / `stop_face_identity.sh`（一鍵啟停與自動清場）。
+- ~~再整理成 `start_face_identity.sh` / `stop_face_identity.sh`~~ → ✅ 已完成（`scripts/start_face_identity_tmux.sh` + `scripts/clean_face_env.sh`）
 - 針對不同場景建立 threshold preset（白天/夜間/逆光）。
 - Go2 互動控制另開文件與驗收計畫（本輪先不納入本 README）。
+- 與語音模組整合測試（Level 2 → Level 3）。
+
+---
+
+## ROS2 Package 結構
+
+```
+face_perception/
+├── face_perception/
+│   ├── __init__.py
+│   └── face_identity_node.py    # 核心 node（from face_identity_infer_cv.py）
+├── launch/
+│   └── face_perception.launch.py
+├── config/
+│   └── face_perception.yaml     # Jetson operational defaults
+├── test/
+│   └── test_utilities.py        # 純函式 unit tests (13 cases)
+├── setup.py
+└── package.xml
+```
+
+參數完整對照表見 [implementation plan](../superpowers/plans/2026-03-17-face-perception-package.md)。

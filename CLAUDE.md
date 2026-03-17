@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **專題名稱：老人與狗 / PawAI**
 **硬底線：2026/4/13 展示**
-**當前日期：2026-03-16（LLM 鏈路已通，進入整合測試期）**
+**當前日期：2026-03-17（語音主線 freeze，轉入人臉辨識 + D435 整合）**
 
 以 Unitree Go2 Pro 為載體的 **embodied AI 互動陪伴平台**。核心是「人臉辨識 + 中文語音互動 + AI 大腦決策」，不是導航或尋物。
 

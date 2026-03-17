@@ -190,6 +190,7 @@ class LlmBridgeNode(Node):
         self.declare_parameter("face_greet_cooldown_s", 60.0)
         self.declare_parameter("action_delay_s", 0.5)
         self.declare_parameter("state_publish_hz", 2.0)
+        self.declare_parameter("force_fallback", False)
 
     def _read_parameters(self) -> None:
         def _str(name: str) -> str:
@@ -216,6 +217,7 @@ class LlmBridgeNode(Node):
         self.face_greet_cooldown_s = _float("face_greet_cooldown_s")
         self.action_delay_s = _float("action_delay_s")
         self.state_publish_hz = _float("state_publish_hz")
+        self.force_fallback = _bool("force_fallback")
 
     # ── Speech trigger (spec §2.4 Path A) ───────────────────────────────
 
@@ -340,7 +342,11 @@ class LlmBridgeNode(Node):
             return
 
         try:
-            result = self._call_cloud_llm(user_message)
+            if self.force_fallback:
+                self.get_logger().info("force_fallback=True, skipping LLM")
+                result = None
+            else:
+                result = self._call_cloud_llm(user_message)
             if result is not None:
                 self._dispatch(result, source)
             elif self.enable_fallback:

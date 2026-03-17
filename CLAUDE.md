@@ -59,18 +59,23 @@ ros2 run speech_processor tts_node --ros-args -p provider:=piper \
   -p playback_method:=datachannel
 ```
 
-### 語音 + LLM 主線（2026-03-17 更新）
+### 語音 + LLM 主線（2026-03-17 晚更新）
 
 ```bash
 # 一鍵啟動（推薦）— 含 LLM preflight check + Megaphone 播放
 bash scripts/start_llm_e2e_tmux.sh
+# 預設模型：Qwen2.5-7B-Instruct（純文字，啟動 ~100s）
+# 覆蓋模型：LLM_MODEL="Qwen/Qwen2.5-3B-Instruct" bash scripts/start_llm_e2e_tmux.sh
 
 # 或手動啟動：
 # 1. SSH tunnel 到 RTX 8000（Cloud LLM）
 ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5
-# 2. llm_bridge_node（取代 intent_tts_bridge_node）
+# 2. llm_bridge_node
 ros2 run speech_processor llm_bridge_node --ros-args \
-  -p llm_endpoint:="http://localhost:8000/v1/chat/completions"
+  -p llm_endpoint:="http://localhost:8000/v1/chat/completions" \
+  -p llm_model:="Qwen/Qwen2.5-7B-Instruct"
+# 3. 強制走 RuleBrain fallback（debug 用）
+ros2 run speech_processor llm_bridge_node --ros-args -p force_fallback:=true
 ```
 
 ### PawAI Studio（前端開發用）
@@ -146,7 +151,10 @@ Layer 3（中控）→ Layer 2（感知）→ Layer 1（驅動/硬體）。事�
 **WebRTC 音訊播放速查**：
 - **現行方式**：Megaphone DataChannel — `4001`(enter) → `4003`(upload chunks) → `4002`(exit)
 - chunk_size = 4096 base64 chars，payload 須含 `current_block_size`，msg type 須為 `"req"`
-- WebRTC audio track 為備選研究分支（Go2 未能播放 RTP 音訊）
+- **Megaphone cooldown**：4002 EXIT 後 sleep 0.5s，防止 Go2 狀態機未重置導致 silent fail
+- **LLM 模型**：Qwen2.5-7B-Instruct（純文字 CausalLM），max_tokens 120，reply ≤ 25 字
+- **ASR warmup**：stt_intent_node 啟動時 daemon thread 預熱 Whisper CUDA（~12s）
+- **RuleBrain fallback**：LLM 失敗自動 fallback，`force_fallback:=true` 可強制測試
 - 詳見 [`docs/語音功能/README.md`](docs/語音功能/README.md) 的「Go2 音訊播放」章節
 
 ---

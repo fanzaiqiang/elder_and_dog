@@ -177,9 +177,9 @@ class LlmBridgeNode(Node):
     def _declare_parameters(self) -> None:
         self.declare_parameter("llm_endpoint", "http://140.136.155.5:8000/v1/chat/completions")
         self.declare_parameter("llm_model", "Qwen/Qwen3.5-9B")
-        self.declare_parameter("llm_timeout", 5.0)
+        self.declare_parameter("llm_timeout", 15.0)
         self.declare_parameter("llm_temperature", 0.2)
-        self.declare_parameter("llm_max_tokens", 2000)
+        self.declare_parameter("llm_max_tokens", 300)
         self.declare_parameter("intent_event_topic", "/event/speech_intent_recognized")
         self.declare_parameter("face_event_topic", "/event/face_identity")
         self.declare_parameter("face_state_topic", "/state/perception/face")
@@ -365,6 +365,8 @@ class LlmBridgeNode(Node):
             ],
             "temperature": self.llm_temperature,
             "max_tokens": self.llm_max_tokens,
+            # Disable Qwen3.5 thinking/reasoning mode for faster, cleaner JSON output
+            "chat_template_kwargs": {"enable_thinking": False},
         }
 
         try:

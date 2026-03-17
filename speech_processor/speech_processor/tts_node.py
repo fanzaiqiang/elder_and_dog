@@ -761,6 +761,17 @@ class EnhancedTTSNode(Node):
           chunk_size = 4096 (base64 chars), payload must include current_block_size.
         """
         MEGAPHONE_CHUNK_SIZE = 4096
+        MEGAPHONE_GAIN_DB = 10  # Boost speech volume (+10dB, clips peaks)
+
+        # Boost WAV volume (Go2 Megaphone output is quiet)
+        try:
+            audio_seg = AudioSegment.from_file(io.BytesIO(wav_data))
+            audio_seg = audio_seg.apply_gain(MEGAPHONE_GAIN_DB)
+            buf = io.BytesIO()
+            audio_seg.export(buf, format="wav")
+            wav_data = buf.getvalue()
+        except Exception as e:
+            self.get_logger().warning(f"Gain boost failed: {e}")
 
         # Save debug WAV for offline analysis
         dbg_path = f"/tmp/megaphone_debug_{int(time.time())}.wav"

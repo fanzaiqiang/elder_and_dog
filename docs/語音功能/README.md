@@ -119,6 +119,31 @@ WebRTC audio track (sendonly) 的 SDP negotiation、RTP 封包發送均正常，
 - Echo loop：Go2 播放時 ASR 可能聽到自己的聲音，需調 echo gate
 - Go2 OTA 自動更新可能改變行為 — 建議 Ethernet 直連鎖住韌體版本
 
+### Postmortem：Megaphone「失效」誤判（2026-03-16 → 03-17）
+
+**事件**：2026-03-16 判定 Go2 v1.1.7 不再支援 Megaphone API，全面切換至 WebRTC audio track。2026-03-17 經深度調查後推翻此結論。
+
+**錯誤結論**：「Go2 韌體 v1.1.7 不再處理 Megaphone API（4001/4003/4002）」
+
+**正確結論**：v1.1.7 仍支援 Megaphone，但對 payload 格式敏感。先前失敗的三個具體原因：
+1. chunk_size 用 16384（應為 4096）
+2. 4003 payload 缺少 `current_block_size` 欄位
+3. DataChannel 訊息 type 用 `"msg"`（audiohub 要求 `"req"`）
+
+**誤判過程**：送出格式不對的 4001/4003/4002 → Go2 silently ignore → `play_state` 永遠 `not_in_use` → 得出「API 被韌體砍掉」結論 → 花一天建 WebRTC audio track 替代方案
+
+**修正過程**：
+1. 發現社群 [go2_webrtc_connect](https://github.com/legion1581/unitree_webrtc_connect) 有成功的 Megaphone 範例
+2. 比對 payload 格式差異（chunk size、欄位、msg type）
+3. 用 `test_megaphone_v2.py` 對齊社群格式後驗證成功
+
+**排除的假根因**（調查並非白費）：
+- DataChannel / ICE / DTLS / SCTP 均正常
+- Go2 確實能接收音訊（不是硬體或韌體鎖死）
+- WebRTC audio track 的 RTP 確實有送出（aiortc sender stats 確認），但 Go2 不播放（可能是 sender 細節與 Go2 預期不一致）
+
+**教訓**：Go2 對音訊 API 的錯誤不回報（silent ignore），容易把「格式錯」誤判為「API 不支援」。未來遇到類似情況應先對照社群已驗證的實作。
+
 ---
 
 ## Jetson 麥克風注意事項

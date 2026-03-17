@@ -176,7 +176,7 @@ class LlmBridgeNode(Node):
 
     def _declare_parameters(self) -> None:
         self.declare_parameter("llm_endpoint", "http://140.136.155.5:8000/v1/chat/completions")
-        self.declare_parameter("llm_model", "Qwen/Qwen3.5-9B")
+        self.declare_parameter("llm_model", "Qwen/Qwen2.5-7B-Instruct")
         self.declare_parameter("llm_timeout", 15.0)
         self.declare_parameter("llm_temperature", 0.2)
         self.declare_parameter("llm_max_tokens", 120)

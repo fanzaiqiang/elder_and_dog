@@ -27,7 +27,7 @@ CONN_TYPE="${CONN_TYPE:-webrtc}"
 
 # ── LLM ──
 LLM_ENDPOINT="${LLM_ENDPOINT:-http://localhost:8000/v1/chat/completions}"
-LLM_MODEL="${LLM_MODEL:-Qwen/Qwen3.5-9B}"
+LLM_MODEL="${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
 LLM_TIMEOUT="${LLM_TIMEOUT:-5.0}"
 
 # ── ASR ──

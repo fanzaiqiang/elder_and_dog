@@ -375,10 +375,7 @@ class TTSProvider_Piper:
             with open(wav_path, "rb") as f:
                 wav_data = f.read()
 
-            audio = AudioSegment.from_wav(io.BytesIO(wav_data))
-            mp3_io = io.BytesIO()
-            audio.export(mp3_io, format="mp3")
-            return mp3_io.getvalue()
+            return wav_data
         except Exception:
             return None
         finally:
@@ -682,7 +679,7 @@ class EnhancedTTSNode(Node):
         """Play audio locally"""
         try:
             self._publish_tts_playing(True)
-            audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
+            audio = AudioSegment.from_file(io.BytesIO(audio_data))
             play(audio)
             self.get_logger().info("🔊 Local playback completed")
         except Exception as e:
@@ -710,7 +707,9 @@ class EnhancedTTSNode(Node):
                 self._play_on_robot_audio_track(wav_data, duration)
             else:
                 # DataChannel: needs 16kHz/16bit/mono for Go2 audiohub
-                wav_data = self.audio_processor.convert_to_wav(audio_data, AudioFormat.MP3)
+                # Piper now returns WAV directly; other providers still return MP3
+                src_fmt = AudioFormat.WAV if self.config.provider == TTSProvider.PIPER else AudioFormat.MP3
+                wav_data = self.audio_processor.convert_to_wav(audio_data, src_fmt)
                 if not wav_data:
                     self.get_logger().error("Failed to convert audio to WAV")
                     return
@@ -725,7 +724,7 @@ class EnhancedTTSNode(Node):
         """Convert MP3/audio to WAV keeping original sample rate (no 16kHz downsampling)."""
         try:
             from pydub import AudioSegment
-            audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
+            audio = AudioSegment.from_file(io.BytesIO(audio_data))
             # Only convert to mono, keep original sample rate
             audio = audio.set_channels(1).set_sample_width(2)
             buf = io.BytesIO()

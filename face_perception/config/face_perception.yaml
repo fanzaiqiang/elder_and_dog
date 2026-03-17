@@ -1,0 +1,19 @@
+# Operational defaults for Jetson + D435.
+# These override code defaults where needed.
+face_identity_node:
+  ros__parameters:
+    # YuNet legacy needed for Jetson OpenCV 4.5.4
+    yunet_model: "/home/jetson/face_models/face_detection_yunet_legacy.onnx"
+    sface_model: "/home/jetson/face_models/face_recognition_sface_2021dec.onnx"
+    db_dir: "/home/jetson/face_db"
+    model_path: "/home/jetson/face_db/model_sface.pkl"
+    # Operational thresholds (more permissive than code default 0.90)
+    det_score_threshold: 0.35
+    min_face_area_ratio: 0.001
+    # Disable compare image (saves bandwidth)
+    publish_compare_image: false
+    # Always headless on Jetson (no DISPLAY)
+    headless: true
+    # Max tracked faces
+    max_faces: 5
+    publish_fps: 8.0

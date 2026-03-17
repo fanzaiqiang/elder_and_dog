@@ -133,10 +133,32 @@ ros2 run speech_processor tts_node --ros-args \
 
 WebRTC audio track (sendonly) 的 SDP negotiation、RTP 封包發送均正常，但 Go2 不播放收到的音訊。可能需要對齊社群的 `MediaPlayer` + `addTrack` 模式。暫不作為 demo 主線。
 
-### 已知問題
+### 已知限制（usable baseline, not fully solved）
 
-- 音質待優化：16kHz 採樣率丟失高頻（社群用 44100Hz），音量偏小
-- Echo loop：Go2 播放時 ASR 可能聽到自己的聲音，需調 echo gate
+**穩定性**：
+- 連續 10 輪 smoke test 播放率 **9/10**（偶爾 1 次靜默）
+- try/finally 保證 EXIT(4002) 必送 + tail_sec=0.5s 已改善穩定性
+- 仍有少量 silent fail，疑似 Go2 Megaphone 狀態機未完全重置
+- 明日優先驗：加 cooldown（4002 後 sleep 0.5s）
+
+**音質**：
+- 16kHz 採樣率丟失高頻，語音偏糊（社群用 44100Hz）
+- +16dB gain boost 音量可接受但有輕微爆音
+- 待做：22050Hz sample rate A/B、length_scale 調校
+
+**Echo gate**：
+- ✅ 已修復：tts_playing(True) 提前到 TTS request 入口，cooldown 1s
+- 10 輪連續對話無自激
+
+**延遲基線**（2026-03-17 實測，10 輪平均）：
+| 階段 | 平均 | 最快 | 最慢 |
+|------|------|------|------|
+| ASR | 1.4s | 0.9s | 5.3s（首輪冷啟） |
+| LLM | 2.3s | 0.5s | 2.6s |
+| TTS | 1.7s | 0.3s（cache）| 3.2s |
+| 播放 | 5.8s | 4.6s | 10.4s |
+| **總延遲** | **~11s** | **~10s** | **~18s** |
+
 - Go2 OTA 自動更新可能改變行為 — 建議 Ethernet 直連鎖住韌體版本
 
 ### Postmortem：Megaphone「失效」誤判（2026-03-16 → 03-17）

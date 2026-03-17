@@ -156,15 +156,22 @@ bash scripts/start_llm_e2e_tmux.sh
 ```
 
 對著 Go2 說 5 句話（例如「你好」「你是誰」「現在幾點」「你好嗎」「停止」），記錄每輪：
-- speech_end timestamp（stt_intent_node log: `Speech capture timeout` 或 `speech_end` 後的 ASR 開始時間）
-- playback_start timestamp（tts_node log: `Megaphone:` 開始上傳 chunks 的時間）
+- speech_end timestamp（stt_intent_node log: `speech_end` 事件或 ASR 開始前的最後 VAD 時間）
+- upload_start timestamp（tts_node log: `Megaphone:` 開始上傳 chunks 的時間）
 - reply_text 內容
 - 回覆是否自然
 
-Expected:
-- median(speech_end → playback_start) ≤ 5s = Pass
+> **指標說明**：spec 定義的主指標是 `speech_end → Go2 開始出聲（audible start）`。
+> 但 Go2 沒有可查詢的播放狀態 API（play_state 永遠回 not_in_use），因此無法精確量測 audible start。
+> 這裡用 `speech_end → upload_start` 作為 **proxy 指標**（下界）。實際 audible start 會晚於 upload_start 約 0.5-1s（Megaphone 緩衝 + 解碼延遲）。
+> 人工監聽時用碼錶粗估 `speech_end → 聽到聲音` 作為 **體感指標**（上界），兩者取交叉驗證。
+
+Expected（proxy 指標 upload_start）:
+- median(speech_end → upload_start) ≤ 5s = Pass
 - 5s < median ≤ 6s = Acceptable
 - median > 6s = Fail
+
+體感指標參考：人工監聽 median(speech_end → 聽到聲音) 應 ≤ 6s
 
 **Rollback**：如果 llm_bridge_node log 出現 >10% "parse/validation failed"（JSON 被截斷），將 max_tokens 改回 150。
 
@@ -459,9 +466,12 @@ git commit -m "feat(speech): add force_fallback parameter for RuleBrain path tes
 
 **Files:** 無程式碼改動，純驗證步驟
 
-- [ ] **Step 5.1: 斷 SSH tunnel**
+> **執行位置**：以下所有命令必須在 **Jetson** 上執行（因為 llm_bridge_node 跑在 Jetson 上，SSH tunnel 的 `localhost:8000` 是 Jetson 的 loopback）。不要在 WSL2 開發機上跑——開發機的 localhost:8000 與 Jetson 的無關。
+
+- [ ] **Step 5.1: 斷 SSH tunnel（在 Jetson 上）**
 
 ```bash
+# 在 Jetson 上執行
 pkill -f "ssh.*-L 8000"
 curl -sf --max-time 3 http://localhost:8000/v1/models && echo "TUNNEL STILL UP" || echo "TUNNEL DOWN"
 ```
@@ -470,7 +480,7 @@ Expected: `TUNNEL DOWN`
 
 - [ ] **Step 5.2: 重啟 llm_bridge_node（短 timeout + 關閉 force_fallback）**
 
-在 llm-e2e session 的 llm_bridge_node pane 裡重啟：
+在 Jetson 的 llm-e2e session 的 llm_bridge_node pane 裡重啟：
 
 ```bash
 ros2 run speech_processor llm_bridge_node --ros-args \
@@ -488,9 +498,10 @@ ros2 run speech_processor llm_bridge_node --ros-args \
 
 Expected: 5/5 有聲 + intent-action 對齊 = Pass
 
-- [ ] **Step 5.4: 恢復 tunnel**
+- [ ] **Step 5.4: 恢復 tunnel（在 Jetson 上）**
 
 ```bash
+# 在 Jetson 上執行
 ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5
 curl -sf --max-time 3 http://localhost:8000/v1/models && echo "TUNNEL UP" || echo "STILL DOWN"
 ```

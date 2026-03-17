@@ -819,16 +819,21 @@ class EnhancedTTSNode(Node):
             time.sleep(max(0.0, duration + self.config.robot_playback_tail_sec))
         finally:
             # ALWAYS send EXIT — if skipped, Go2 stays in ENTER state and goes silent
+            exit_ok = True
             try:
                 self._send_audio_command(4002, json.dumps({}))
             except Exception as exc:
+                exit_ok = False
                 self.get_logger().error(f"Megaphone EXIT(4002) failed: {exc}")
             # Cooldown: let Go2 Megaphone state machine fully reset before next session.
             # Echo gate stays active during this 0.5s (_tts_playing still True).
             # Total echo gate closure = 0.5s cooldown + 1.0s echo_cooldown_ms = 1.5s.
             time.sleep(0.5)
             self._publish_tts_playing(False)
-            self.get_logger().info("Megaphone playback completed (cooldown 0.5s)")
+            if exit_ok:
+                self.get_logger().info("Megaphone playback completed (cooldown 0.5s)")
+            else:
+                self.get_logger().warn("Megaphone playback finished but EXIT failed (cooldown 0.5s)")
 
     def _send_audio_command(self, api_id: int, parameter: str) -> None:
         """Send audio command to robot"""

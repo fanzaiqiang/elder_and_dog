@@ -498,7 +498,9 @@ class SttIntentNode(Node):
             f"text_fallback_topic={self.text_input_topic})"
         )
 
-        # ASR warmup: preload Whisper model + trigger CUDA JIT in background
+        # ASR warmup: preload Whisper model + trigger CUDA JIT in background.
+        # Until warmup completes, first real ASR may block on transcribe() lock.
+        # State topic publishes warmup_done=false/true for observability.
         self._warmup_done = False
         threading.Thread(target=self._do_warmup, daemon=True).start()
 
@@ -1121,6 +1123,7 @@ class SttIntentNode(Node):
                 "last_transcript": self._last_transcript,
                 "last_error": self._last_error,
                 "recording": self._recorder_state.is_recording,
+                "warmup_done": self._warmup_done,
                 "timestamp": self._timestamp(),
             },
             ensure_ascii=True,

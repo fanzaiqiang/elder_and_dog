@@ -573,7 +573,7 @@ class FaceIdentityNode(Node):
                 "stable_name": ts["last_stable_name"],
                 "sim": round(max(0.0, ts["last_stable_sim"]), 4),
                 "distance_m": distance_m,
-                "bbox": [x1, y1, x2, y2],
+                "bbox": [int(x1), int(y1), int(x2), int(y2)],
                 "mode": (
                     "stable"
                     if ts["last_stable_name"] != "unknown"
@@ -616,7 +616,7 @@ class FaceIdentityNode(Node):
                             max(0.0, ts.get("last_stable_sim", 0.0)), 4
                         ),
                         "distance_m": None,
-                        "bbox": list(track["bbox"]),
+                        "bbox": [int(v) for v in track["bbox"]],
                         "mode": (
                             "stable"
                             if ts.get("last_stable_name", "unknown") != "unknown"

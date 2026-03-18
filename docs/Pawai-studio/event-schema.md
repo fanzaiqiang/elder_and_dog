@@ -2,7 +2,7 @@
 
 **文件版本**：v1.0
 **最後更新**：2026-03-13
-**對齊來源**：[mission/README.md](../mission/README.md) v2.0、[interaction_contract.md](../architecture/interaction_contract.md) v1.0
+**對齊來源**：[mission/README.md](../mission/README.md) v2.0、[interaction_contract.md](../architecture/interaction_contract.md) v2.0
 
 > 本文件定義 PawAI Studio Gateway 與 Frontend 之間的 JSON schema。
 > ROS2 層的 Topic schema 見 [interaction_contract.md](../architecture/interaction_contract.md)。

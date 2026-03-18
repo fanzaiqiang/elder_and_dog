@@ -13,11 +13,13 @@
 
 ## 技術選型結論（2026-03-16）
 
-### 推薦方案：與手勢辨識共用 DWPose
+### 推薦方案：與手勢辨識共用 wholebody 推理
 
 | 優先序 | 方案 | 理由 |
 |:------:|------|------|
-| **首選** | **DWPose + TensorRT**（RTMPose 為備援） | 社群回報 Orin Nano ~45 FPS（待本機驗證）、133 keypoints 含 body + foot + hand + face、一個模型同時搞定手勢+姿勢 |
+| **主路徑** | **rtmlib + RTMPose wholebody** | `pip install rtmlib` 即可用、支援 onnxruntime-gpu / TensorRT EP、一個模型同時產出 body + hand keypoints（手勢+姿勢共用） |
+| 升級選項 | DWPose wholebody (TensorRT) | RTMPose 蒸餾版，手部精度略優；但 Jetson 上零成功記錄，待 RTMPose 路徑穩定後再評估是否值得切換 |
+| 備援 | body-only + hand-only 雙模型 | 若 wholebody 在 Jetson 上無法穩定達到展示需求（FPS、手部檢出率或記憶體餘量不足），降級為分開推理 |
 | 次選 | trt_pose (NVIDIA) | TensorRT 原生、Jetson Nano 上 社群值：ResNet 15-16 FPS / DenseNet 9-10 FPS |
 | **不推薦** | ~~MediaPipe Pose~~ | Jetson ARM64 無官方 pip wheel、社群值：CPU-only ~7-20 FPS |
 | 不推薦 | MoveNet | 只有 17 keypoints、無手部、Jetson GPU delegate 有問題 |
@@ -26,15 +28,15 @@
 
 > 詳見 [`../手勢辨識/README.md`](../手勢辨識/README.md) § DWPose vs RTMPose 差異
 
-- **DWPose**：whole-body 133 keypoints 蒸餾版，本專案目標方案
-- **RTMPose**：MMPose 原版，ONNX/TensorRT 匯出較成熟，備援路線
+- **RTMPose**：MMPose 原版，提供 body-only / hand-only / wholebody 等多種 config，ONNX/TensorRT 匯出路徑較成熟。**本專案主路徑（經由 rtmlib 部署）**
+- **DWPose**：RTMPose 的蒸餾版，wholebody 133 keypoints，精度略優（尤其手部）。**升級選項 — 待 RTMPose 路徑穩定後再評估**
 
 ### 為什麼跟手勢辨識共用 DWPose？
 
 DWPose 一次推理輸出 133 個 keypoints（[COCO-WholeBody](https://github.com/jin-s13/COCO-WholeBody) 標準）：
 - **17 body keypoints** → 餵給姿勢分類器（standing/sitting/crouching/fallen）
 - **6 foot keypoints**（左右腳各 3）→ 輔助姿勢判斷（腳尖/腳跟方向）
-- **21 hand keypoints ×2** → 餵給手勢分類器（wave/stop/point/ok）
+- **21 hand keypoints ×2** → 餵給手勢分類器（wave/stop/point/fist）— 實作用 fist，v2.0 契約仍用 ok，待 3/25 benchmark 後正式切換（過渡期用 `GESTURE_COMPAT_MAP`）
 - **68 face keypoints** → 備用（表情辨識等）
 
 **只跑一個模型，分兩個分類器**，比分開跑 Hands + Pose 更省資源。
@@ -167,7 +169,7 @@ def classify_pose(landmarks, prev_landmarks, buffer):
 ```
 vision_perception_node (方案 A) / pose_perception_node (方案 B)
   ├── Subscribe: /camera/color/image_raw (sensor_msgs/Image)
-  ├── 推理: DWPose TensorRT
+  ├── 推理: RTMPose wholebody (rtmlib)
   ├── 分類: rule-based classifier
   ├── Publish: /event/pose_detected (std_msgs/String, JSON)         ← v2.0 凍結介面
   └── Publish: /state/perception/pose (std_msgs/String, JSON)      ← v2.1 擬新增（見下方說明）
@@ -223,12 +225,16 @@ vision_perception_node (方案 A) / pose_perception_node (方案 B)
 ```
 D435 RGB frame (30 FPS)
   ↓
-[DWPose TensorRT 推理] ← 一次推理，社群值：~22ms
-  ↓ 133 keypoints
-  ├── body (17) + foot (6) → pose_classifier.py → /event/pose_detected
-  │                                              → /state/perception/pose (v2.1 內部)
-  └── hand (21×2) → gesture_classifier.py → /event/gesture_detected
+[RTMPose wholebody 推理 (rtmlib)] ← 一次推理，133 keypoints
+  ↓
+  ├── body (17) + foot (6) → pose_classifier → /event/pose_detected
+  │                                           → /state/perception/pose (v2.1 內部)
+  └── hand (21×2) → gesture_classifier → /event/gesture_detected
 ```
+
+**主路徑**：rtmlib + RTMPose wholebody，單模型同時產出 body + hand keypoints。
+**升級選項**：DWPose wholebody（精度略優），待主路徑穩定後評估。
+**備援**：若 wholebody 在 Jetson 上無法穩定達到展示需求（FPS、手部檢出率或記憶體餘量不足），降級為 hand-only + body-only 雙模型。
 
 **好處**：
 - 一個模型、一次推理、兩個分類器
@@ -240,7 +246,7 @@ D435 RGB frame (30 FPS)
 **方案 A：單一 Node（推薦）**
 ```
 vision_perception_node          ← 統一命名
-  ├── DWPose 推理
+  ├── RTMPose wholebody 推理 (rtmlib)
   ├── pose_classifier → /event/pose_detected
   └── gesture_classifier → /event/gesture_detected
 ```

@@ -77,11 +77,13 @@ from rtmlib import Hand
 hand = Hand(backend='onnxruntime', device='cuda')
 keypoints, scores = hand(img)
 
-# Wholebody 133 keypoints（手勢+姿勢共用）
+# Wholebody 133 keypoints（手勢+姿勢共用）— 主路徑
 from rtmlib import Wholebody
 wholebody = Wholebody(mode='balanced', backend='onnxruntime', device='cuda')
 keypoints, scores = wholebody(img)
 ```
+
+**主路徑：RTMPose wholebody 單模型**，一次推理同時產出 body + hand keypoints，分別餵給 pose_classifier 和 gesture_classifier。備援為 hand-only + body-only 雙模型（wholebody 在 Jetson 上無法穩定達到展示需求時啟用）。DWPose 保留為後續精度升級選項。
 
 **Jetson 上搭配 `onnxruntime-gpu`**（[Jetson Zoo](https://elinux.org/Jetson_Zoo) 有 pre-built wheel）即可用 GPU 加速，繞過 MMPose 在 Jetson 上的所有編譯地獄。
 
@@ -425,6 +427,12 @@ Interaction Executive
   "hand":        "right"
 }
 ```
+
+> **⚠️ Contract 邊界說明**：
+> - `interaction_contract.md` v2.0 只凍結了 `/event/gesture_detected`。
+> - **`/state/perception/gesture` 不在 v2.0 凍結範圍內**，屬 v2.1 擬新增項目，4/13 前可先作為內部 topic 使用，不納入凍結介面。正式納入需經 System Architect 核准。
+> - `event-schema.md` v1.0 中的 `GestureState` 型別定義是**前端 store 用的資料結構**，與 ROS2 layer 的 topic 凍結是兩件事。
+> - v2.0 契約中 gesture enum 仍為 `ok`。實作已改用 `fist`（見 §手勢可靠度分級），過渡期由 `GESTURE_COMPAT_MAP` 處理相容性，待 3/25 Phase 2 benchmark 後正式切換契約。
 
 ---
 

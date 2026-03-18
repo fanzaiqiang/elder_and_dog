@@ -1,0 +1,13 @@
+# vision_perception/config/vision_perception.yaml
+# Phase 1 defaults — no camera, mock inference
+vision_perception_node:
+  ros__parameters:
+    inference_backend: "mock"
+    use_camera: false
+    publish_fps: 8.0
+    tick_period: 0.05
+    color_topic: "/camera/camera/color/image_raw"
+    depth_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    gesture_vote_frames: 5
+    pose_vote_frames: 20
+    mock_scenario: "standing_idle"

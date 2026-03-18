@@ -306,9 +306,10 @@ class MockEventPublisher(Node):
 
 ## Foxglove 整合
 
-所有 debug_image + event topic 透過 foxglove_bridge 暴露（port 8765）。
-與 face_perception 共用同一個 bridge instance。
-驗收方式：Foxglove Studio 打開看到 keypoint overlay + Raw Messages 看到正確 JSON。
+透過 foxglove_bridge 暴露（port 8765），與 face_perception 共用同一個 bridge instance。
+
+- **Phase 1**（無相機）：Foxglove Raw Messages panel 驗證 `/event/gesture_detected` 和 `/event/pose_detected` 的 JSON 結構正確
+- **Phase 2**（有相機）：加 Image panel 驗證 `/vision_perception/debug_image` keypoint overlay
 
 ---
 
@@ -329,8 +330,9 @@ class MockEventPublisher(Node):
 
 | 路徑 | 輸入 | 經過 | 輸出 | 用途 |
 |------|------|------|------|------|
-| mock_inference | Camera topic | Node + classifier + 假 keypoints | event topics + debug_image | 測試整條 pipeline |
-| mock_event_publisher | 無 | 直接 event_builder | event topics（無 debug_image） | 前端開發，不需 camera |
+| mock_inference + use_camera=false | 無（timer-driven） | Node + classifier + 假 keypoints | event topics（無 debug_image） | Phase 1：開發機上驗收完整 node pipeline，不需相機 |
+| mock_inference + use_camera=true | Camera topic | Node + classifier + 假 keypoints | event topics + debug_image | Phase 2 過渡：有相機但推理仍用 mock，測 overlay |
+| mock_event_publisher | 無（timer-driven） | 直接 event_builder | event topics（無 debug_image） | 前端開發：Studio GesturePanel / PosePanel，不經 node |
 
 ---
 

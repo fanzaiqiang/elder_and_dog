@@ -27,6 +27,7 @@ setup(
         "console_scripts": [
             "vision_perception_node = vision_perception.vision_perception_node:main",
             "mock_event_publisher = vision_perception.mock_event_publisher:main",
+            "event_action_bridge = vision_perception.event_action_bridge:main",
         ],
     },
 )

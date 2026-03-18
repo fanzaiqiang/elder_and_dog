@@ -128,9 +128,13 @@ bash scripts/clean_face_env.sh --all
 ### 手勢+姿勢 pipeline（vision_perception）
 
 ```bash
-# Phase 1 mock mode（不需相機，開發機或 Jetson 都可）
+# Phase 2 真推理（Jetson + D435，RTMPose wholebody）
 colcon build --packages-select vision_perception
 source install/setup.zsh
+ros2 launch vision_perception vision_perception.launch.py \
+  inference_backend:=rtmpose use_camera:=true rtmpose_mode:=balanced
+
+# Phase 1 mock mode（不需相機，開發機或 Jetson 都可）
 ros2 launch vision_perception vision_perception.launch.py \
   inference_backend:=mock use_camera:=false mock_scenario:=stop
 
@@ -143,6 +147,13 @@ ros2 run vision_perception vision_status_display
 # Event → Go2 動作橋接
 ros2 launch vision_perception event_action_bridge.launch.py
 ```
+
+**RTMPose 已知狀況**（3/18 實測）：
+- balanced mode, GPU 91-99% 滿載，debug_image ~3.8 Hz
+- 溫度 66°C 安全，RAM 餘 2.4GB
+- 若需更快可切 `rtmpose_mode:=lightweight`（未測）
+- onnxruntime-gpu 安裝：`pip install onnxruntime-gpu==1.23.0 --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 --extra-index-url https://pypi.org/simple/`
+- rtmlib 安裝：`pip install --no-deps rtmlib`（避免拉回 CPU onnxruntime）
 
 ### 環境清理（語音模組）
 

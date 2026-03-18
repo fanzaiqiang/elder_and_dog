@@ -80,7 +80,22 @@ DWPose 推理（TensorRT, 社群值：~22ms/frame）
 | MediaPipe Pose | 33 | 社群值：7-25 FPS (CPU) | ~150-300MB | ✅ 有 |
 | MoveNet Lightning | 17 | 無 Jetson 數據 | — | ❌ 2D |
 
-> † DWPose 45 FPS 數據來自[社群實作文章](https://johal.in/dwpose-wholebody-python-yolo-detect-2026-2/)，非官方 benchmark。需以本專案 Jetson Orin Nano + JetPack 6.x 實測確認。
+> † DWPose 45 FPS 數據來自[社群實作文章](https://johal.in/dwpose-wholebody-python-yolo-detect-2026-2/)，非官方 benchmark。
+
+### 本專案實測（2026-03-18, Jetson Orin Nano + JetPack 6.x）
+
+| 項目 | 數值 |
+|------|------|
+| 方案 | rtmlib 0.0.15 + onnxruntime-gpu 1.23.0（Jetson AI Lab wheel） |
+| 模型 | RTMPose wholebody balanced（YOLOX-m + rtmw-dw-x-l） |
+| 輸入 | D435 640x480@30Hz RGB |
+| **推理 FPS** | **~7.5 FPS**（隨機噪聲）/ **~3.8 Hz debug_image**（真實 D435 + face 同跑） |
+| GPU 使用率 | 91-99%（幾乎滿載） |
+| 溫度 | GPU 66°C（安全，上限 ~95°C） |
+| RAM | 5.0/7.6 GB（餘 2.4GB） |
+| pose_detected | ✅ 真人可觸發（sitting, crouching 正確反應） |
+
+**結論**：balanced mode 可用但延遲偏高。若需提升 FPS，可嘗試 `lightweight` mode（未測）。
 
 ---
 

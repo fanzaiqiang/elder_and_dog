@@ -23,7 +23,7 @@ face_perception 已落地為 ROS2 package，今日進行 Jetson smoke test。手
 ```
 4/13 Demo 當天：
 
-realsense_node → /camera/color/image_raw + /camera/aligned_depth_to_color/image_raw
+realsense_node → /camera/camera/color/image_raw + /camera/camera/aligned_depth_to_color/image_raw
   ├── face_identity_node        → /event/face_identity + /state/perception/face（現有，不動）
   └── vision_perception_node    → /event/gesture_detected + /event/pose_detected（新建）
 ```
@@ -144,14 +144,18 @@ def build_gesture_event(gesture: str, confidence: float, hand: str) -> dict:
 
 def build_pose_event(pose: str, confidence: float, track_id: int = 0) -> dict:
     """產生 /event/pose_detected JSON payload。
-    track_id 預設 0 = 未追蹤。contract 允許無法對應時使用。
+    track_id: contract 描述為「關聯的人臉 track_id（若可對應）」。
+    Phase 1 不實作 face association，固定填 0。
+    ⚠️ track_id=0 是 Phase 1 內部約定，不是 contract 定義的 sentinel。
+    下游（Executive / Studio）不得用此值做 face 關聯邏輯。
+    真正的 face association 延至 Phase 2/3 實作。
     """
     return {
         "stamp": time.time(),                                    # auto
         "event_type": "pose_detected",                           # hard-coded
         "pose": pose,
         "confidence": round(confidence, 4),
-        "track_id": track_id,                                    # 0 = no tracking
+        "track_id": track_id,                                    # Phase 1: always 0, no association
     }
 ```
 
@@ -167,8 +171,11 @@ mock_event_publisher 和 vision_perception_node 都 import 這個模組，保證
 # inference_adapter.py
 class InferenceAdapter(ABC):
     @abstractmethod
-    def infer(self, image_bgr: np.ndarray) -> InferenceResult:
-        """回傳標準化 keypoints。"""
+    def infer(self, image_bgr: np.ndarray | None) -> InferenceResult:
+        """回傳標準化 keypoints。
+        image_bgr=None 時（use_camera=false 模式），mock 實作直接回傳 scenario keypoints。
+        真實推理實作在 image_bgr=None 時應 raise ValueError。
+        """
 
 @dataclass
 class InferenceResult:
@@ -211,18 +218,35 @@ class RTMPoseInference(InferenceAdapter):
 class VisionPerceptionNode(Node):
     # 參數：
     #   inference_backend: "mock" | "rtmpose"（Phase 2）
+    #   use_camera: true | false  ← Phase 1 關鍵：false = 無相機模式（見下方說明）
     #   publish_fps: 8.0          ← 控制 debug_image 發布頻率，不影響 event（event 是觸發式）
     #   tick_period: 0.05         ← 主迴圈頻率（20Hz）
-    #   color_topic, depth_topic
+    #   color_topic: "/camera/camera/color/image_raw"           ← 對齊 face_perception 現有主線
+    #   depth_topic: "/camera/camera/aligned_depth_to_color/image_raw"
     #   gesture_vote_frames: 5
     #   pose_vote_frames: 20
     #   mock_scenario: "standing_idle"
 
-    # 訂閱：camera color（+ depth optional）
+    # ──── 兩種運行模式 ────
+    #
+    # use_camera=true（Phase 2+ / 有相機時）：
+    #   訂閱 camera topic → 收到影像 → inference adapter → classifier → publish
+    #
+    # use_camera=false（Phase 1 預設 / 無相機）：
+    #   不訂閱任何 camera topic
+    #   timer-driven tick → MockInference 直接產生假 keypoints（不需要 image 輸入）
+    #   完整走 classifier → event_builder → publish 路徑
+    #   可在開發機上獨立驗收整條 node pipeline，不需要 D435 / webcam
+    #
+    # MockInference.infer() 在 use_camera=false 模式下接收 None 作為 image 參數，
+    # 直接回傳 scenario-based keypoints。inference_adapter.infer() 簽名改為：
+    #   def infer(self, image_bgr: np.ndarray | None) -> InferenceResult
+
     # Publisher（QoS: Reliable, Volatile, depth=10 — 對齊 contract v2.0 §8.2）：
     #   /event/gesture_detected   (String JSON) — v2.0 凍結，觸發式（狀態變化時）
     #   /event/pose_detected      (String JSON) — v2.0 凍結，觸發式（狀態變化時）
     #   /vision_perception/debug_image (Image BGR8) — 帶 keypoint overlay，受 publish_fps 控制
+    #     （use_camera=false 時不發布 debug_image，因為沒有原始影像可疊加）
 
     # Temporal smoothing（node 層管理，不在 classifier 裡）：
     #   gesture_buffer: deque(maxlen=5)
@@ -241,7 +265,7 @@ class VisionPerceptionNode(Node):
     # 錯誤處理（參考 face_identity_node.py 行 446-463, 481-484）：
     #   shutting_down flag + rclpy.ok() 檢查
     #   safe_publish: try/except 包 debug_image publish
-    #   camera 斷流：tick 中 color is None 時 early return
+    #   camera 斷流：tick 中 color is None 時 early return（僅 use_camera=true）
     #   inference 例外：try/except 包推理呼叫，log warning 不 crash
 ```
 
@@ -349,27 +373,44 @@ class MockEventPublisher(Node):
 
 ## Verification
 
-### Phase 1 驗收
+### Phase 1 驗收（無相機，開發機上即可完成）
+
 ```bash
 # Build
 colcon build --packages-select vision_perception
 source install/setup.zsh
 
-# 單元測試
+# 1. 單元測試（純 Python，不需 ROS2 runtime）
 python -m pytest vision_perception/test/ -v
 
-# Mock node 跑起來
-ros2 launch vision_perception vision_perception.launch.py inference_backend:=mock
+# 2. 無相機 mock node（Phase 1 主要驗收路徑）
+ros2 launch vision_perception vision_perception.launch.py \
+  inference_backend:=mock use_camera:=false mock_scenario:=standing_idle
 
-# 確認 topic
+# 確認 topic 存在且有資料
 ros2 topic list | grep -E "gesture|pose|vision"
 ros2 topic echo /event/gesture_detected --once
 ros2 topic echo /event/pose_detected --once
-ros2 topic hz /vision_perception/debug_image
+# 注意：use_camera=false 時不發布 debug_image（無原始影像可疊加）
 
-# Mock publisher（給前端）
+# 3. Mock publisher（給前端，完全獨立路徑）
 ros2 launch vision_perception mock_publisher.launch.py
 
-# Foxglove
-# 連接 ws://localhost:8765，看到 debug_image + event JSON
+# 4. 驗證 event JSON 結構對齊 contract v2.0
+# 確認包含 stamp, event_type, gesture/pose, confidence, hand/track_id
+
+# 5. Foxglove（驗證 event JSON）
+# 連接 ws://localhost:8765，Raw Messages panel 看到正確 JSON
+```
+
+### Phase 2 驗收（有相機，Jetson 上）
+
+```bash
+# 有相機模式
+ros2 launch vision_perception vision_perception.launch.py \
+  inference_backend:=rtmpose use_camera:=true
+
+# 驗證 debug_image（帶 keypoint overlay）
+ros2 topic hz /vision_perception/debug_image   # 預期 ≥6 Hz
+# Foxglove Image panel 看到 keypoint 疊加畫面
 ```

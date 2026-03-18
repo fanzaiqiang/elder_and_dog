@@ -1,9 +1,9 @@
 # PawAI Mission 入口頁
 
 **專案名稱**：老人與狗 (Elder and Dog) / PawAI
-**文件版本**：v2.0
+**文件版本**：v2.2
 **定案日期**：2026-03-07
-**最後更新**：2026-03-12
+**最後更新**：2026-03-18
 **交付期限**：2026/4/13 (硬底線)
 
 > **v2.0 更新**：全面更新功能閉環設計、本地/雲端拆分策略、PawAI Studio 定位、團隊分工方向
@@ -25,9 +25,9 @@
 
 | 角色 | 閱讀重點 | 延伸文件 |
 |------|----------|----------|
-| 新成員 (黃、陳) | 第 1、2、3、7 節 | [setup/README.md](../setup/README.md) |
-| 手勢/姿勢研究 (楊、鄔) | 第 5、6、7 節 | [手勢辨識/README.md](../手勢辨識/README.md) |
-| PawAI Studio 前端 (鄔) | 第 5、6、7 節 | [Pawai-studio/README.md](../Pawai-studio/README.md) |
+| 新成員 | 第 1、2、3、7 節 | [setup/README.md](../setup/README.md) |
+| 手勢/姿勢研究 (黃旭、陳若恩) | 第 5、6、7 節 | [手勢辨識/README.md](../手勢辨識/README.md) |
+| 前端開發 (魏宇同) | 第 5、6、7 節 | [Pawai-studio/README.md](../Pawai-studio/README.md) |
 | System Architect | 全篇 + 附錄 | [interaction_contract.md](../architecture/interaction_contract.md) |
 
 ---
@@ -63,9 +63,12 @@
 | 里程碑 | 日期 | 交付內容 |
 |--------|------|----------|
 | 功能閉環凍結 | 3/12 | 8 個功能的本地/雲端拆分確認（本文件） |
-| 攻守交換 | 3/16 | Roy 交出架構核心，楊/鄔/黃/陳接手前端與文件 |
+| 攻守交換 | 3/16 | Roy 交出架構核心，其他成員接手前端與文件 |
+| 前端網站截止 | 3/26 | 前端頁面完成，Roy 審查後告知修改項目 |
+| 四功能整合測試 | 3/26 – 4/2 | 人臉 + 語音 + 手勢 + 姿勢整合驗證 |
 | P0 穩定化 | 4/6 | Demo A/C 成功率 >= 90% |
-| **最終展示** | **4/13** | **完整系統展示** |
+| **文件繳交** | **4/13** | **七大功能完成 + 專題文件繳交** |
+| **展示／驗收** | **五月** | **完整系統展示與發表** |
 
 ---
 
@@ -96,7 +99,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  雲端增強層 (5×RTX 8000, 240GB VRAM)                         │
-│  ├── GPU 0: LLM Brain (Qwen3.5-9B → 27B, vLLM)             │
+│  ├── GPU 0: LLM Brain (Qwen2.5-7B-Instruct, vLLM)           │
 │  ├── GPU 1: 備用 / 模型實驗                                   │
 │  ├── GPU 2-4: 未來擴充（物體辨識、ArcFace 等）                │
 │  └── CPU: FastAPI Gateway + Event Bus + PawAI Studio Backend │
@@ -105,8 +108,8 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  邊緣端 (Jetson Orin Nano 8GB)                               │
 │  ├── 常駐：Sherpa-onnx KWS (~50MB) + YuNet 人臉偵測 (~100MB) │
-│  ├── 觸發式：faster-whisper ASR + MeloTTS/Piper              │
-│  ├── 降級用：Qwen3.5-0.8B INT4 (~1GB, 僅斷網時載入)          │
+│  ├── 觸發式：faster-whisper ASR + Piper TTS                   │
+│  ├── 降級用：Qwen2.5-0.8B INT4 (~1GB, 僅斷網時載入)          │
 │  ├── ROS2 Humble + Interaction Executive                     │
 │  └── D435 RGB-D + 深度估計                                    │
 └─────────────────────────────────────────────────────────────┘
@@ -128,8 +131,8 @@
 | YuNet 人臉偵測 | ~0.1 GB | 常駐 |
 | Sherpa-onnx 喚醒詞 | ~0.05 GB | 常駐 |
 | faster-whisper Tiny/Small | 0.4-1.0 GB | 觸發式（喚醒後載入） |
-| MeloTTS / Piper | 0.3-0.8 GB | 觸發式（喚醒後載入） |
-| Qwen3.5-0.8B INT4 | ~1.0 GB | 僅斷網降級時載入 |
+| Piper TTS | 0.3-0.5 GB | 觸發式（喚醒後載入） |
+| Qwen2.5-0.8B INT4 | ~1.0 GB | 僅斷網降級時載入 |
 | 安全餘量 | >= 0.8 GB | 必須保留 |
 
 **省電門禁策略**：喚醒詞觸發前，ASR/LLM/TTS 不載入記憶體。
@@ -142,13 +145,13 @@
 
 | # | 功能 | 優先級 | 本地/雲端 | 狀態 |
 |---|------|:------:|:---------:|:----:|
-| 1 | 語音功能 | **P0** | 本地保底 + 雲端增強 | ✅ 閉環確認 |
-| 2 | 人臉辨識 | **P0** | 純本地 | ✅ 閉環確認 |
-| 3 | 手勢辨識 | P1 | 本地 | ⏸️ 等研究結論 |
-| 4 | 姿勢辨識 | P1 | 本地 | ⏸️ 等研究結論 |
+| 1 | 語音功能 | **P0** | 本地保底 + 雲端增強 | ✅ E2E 已驗證 |
+| 2 | 人臉辨識 | **P0** | 純本地 | ✅ ROS2 package 完成 |
+| 3 | 手勢辨識 | **P1** | 本地 | 🔄 MediaPipe 排除，改 GPU 方案（RTMPose） |
+| 4 | 姿勢辨識 | **P1** | 本地 | 🔄 MediaPipe 排除，改 GPU 方案（RTMPose） |
 | 5 | AI 大腦 (PawAI Studio) | **P0** | 雲端為主 | ✅ 閉環確認 |
-| 6 | 辨識物體 | P2 | 待定 | P0 穩了再做 |
-| 7 | 導航避障 | P2 | 待定 | 最保守，最後才碰 |
+| 6 | 辨識物體 | **P1** | 本地（YOLO） | 核心五功能之一，4/13 前需完成 |
+| 7 | 導航避障 | P2 | 待定 | 加分功能，核心穩了再做 |
 | 8 | 文件網站 | **P0** | N/A | ✅ 閉環確認 |
 
 ### 5.2 功能 1：語音功能
@@ -160,9 +163,9 @@ Sherpa-onnx KWS 常駐 (~50MB)
   → 喚醒成功
   → 播預錄「我在」（掩蓋模型載入時間）
   → 載入本地語音堆疊（ASR + TTS，必要時載入本地小 LLM）
-  → faster-whisper Tiny/Small (CTranslate2 CUDA)
+  → Whisper Small (CTranslate2 CUDA)
   → 雲端 LLM 或本地意圖判定
-  → MeloTTS / Piper → Go2 喇叭
+  → Piper TTS → Go2 喇叭（或外接 USB 喇叭）
   → keep-alive 30s（連續對話免喚醒）
   → 超時自動卸載 / 「掰掰」立即卸載
 ```
@@ -170,7 +173,7 @@ Sherpa-onnx KWS 常駐 (~50MB)
 #### 雲端增強模式（RTX 8000）
 
 ```
-本地 ASR 完成 → 文字送雲端 LLM (Qwen3.5-9B/27B)
+本地 ASR 完成 → 文字送雲端 LLM (Qwen2.5-7B-Instruct)
   → 雲端做深度理解 / 記憶 / 情感 / 長上下文
   → 回覆文字送回本地 → 本地 TTS 合成播放
   → 若雲端超時 (2-4s) → fallback 到本地
@@ -180,8 +183,8 @@ Sherpa-onnx KWS 常駐 (~50MB)
 
 | Level | 條件 | 行為 |
 |:-----:|------|------|
-| 0 | 雲端正常 | Qwen3.5-9B/27B 完整對話 + Studio 全功能 |
-| 1 | 雲端斷線 | 本地 Qwen3.5-0.8B 基本對話 + 簡化 Studio |
+| 0 | 雲端正常 | Qwen2.5-7B-Instruct 完整對話 + Studio 全功能 |
+| 1 | 雲端斷線 | 本地 Qwen2.5-0.8B 基本對話 + 簡化 Studio |
 | 2 | Jetson 記憶體不足 | Rule Intent + 模板回覆 + 狀態顯示 |
 | 3 | 最小保底 | 喚醒 + ASR + 固定指令（停止/掰掰/打招呼） |
 
@@ -199,11 +202,11 @@ idle_wakeword → wake_ack → loading_local_stack → listening
 
 | 模組 | 選型 | 說明 |
 |------|------|------|
-| 喚醒詞 | Sherpa-onnx KWS | 中文原生、離線、Apache 2.0 |
-| ASR | faster-whisper (CTranslate2 CUDA) | Whisper Tiny/Small，本地離線 |
-| 本地 LLM | Qwen3.5-0.8B INT4 | 僅斷網 fallback 時動態載入，非常駐、非每次必載 |
-| 雲端 LLM | Qwen3.5-9B → 27B (vLLM) | 系統中樞大腦 |
-| TTS | MeloTTS / Piper | 本地合成，低延遲 |
+| 喚醒詞 | Sherpa-onnx KWS | 中文原生、離線、Apache 2.0（評估中） |
+| ASR | Whisper Small (CTranslate2 CUDA) | 本地離線，有幻覺問題待處理 |
+| 本地 LLM | Qwen2.5-0.8B INT4 | 僅斷網 fallback 時動態載入（智商待測） |
+| 雲端 LLM | Qwen2.5-7B-Instruct (vLLM) | 系統中樞大腦，延遲 ~2.7-4.1s |
+| TTS | Piper | 本地合成，低延遲（MeloTTS 已淘汰：太重） |
 
 #### 核心檔案
 
@@ -253,13 +256,27 @@ idle_wakeword → wake_ack → loading_local_stack → listening
 
 回收成 Clean Architecture ROS2 package。
 
-### 5.4 功能 3：手勢辨識 ⏸️
+### 5.4 功能 3：手勢辨識 🔄
 
-等楊/鄔 3/16 研究結論後更新。預計方向：MediaPipe Hands，4 種基本手勢（揮手、指向、OK、停止）。
+**MediaPipe 已排除**（Jetson ARM64 無官方 wheel、CPU-only 無 GPU 加速）。改用 GPU 可部署方案。
 
-### 5.5 功能 4：姿勢辨識 ⏸️
+- **首選**：rtmlib + RTMPose wholebody（`pip install rtmlib`，支援 onnxruntime-gpu / TensorRT EP）
+- **備案**：YOLO11n-pose-hands (Ultralytics)
+- 4 種手勢：wave / stop / point / fist，目標成功率 ≥ 70%
+- Phase 1 mock mode 已完成（23 unit tests pass），待載入實際 GPU 模型
 
-等楊/鄔 3/16 研究結論後更新。預計方向：MediaPipe Pose / MoveNet，4 種基本姿勢（站立、坐下、蹲下、跌倒）。
+> 詳見 [`docs/手勢辨識/README.md`](../手勢辨識/README.md)
+
+### 5.5 功能 4：姿勢辨識 🔄
+
+**MediaPipe Pose 已排除**（同上理由）。與手勢共用 RTMPose wholebody 推理。
+
+- 一個模型產出 133 keypoints（body + hand），分兩個分類器
+- 4 種姿勢：standing / sitting / crouching / fallen，目標成功率 ≥ 70%
+- 跌倒偵測為安全功能，觸發語音警報
+- Phase 1 mock mode 已完成，待載入實際 GPU 模型
+
+> 詳見 [`docs/姿勢辨識/README.md`](../姿勢辨識/README.md)
 
 ### 5.6 功能 5：AI 大腦 (PawAI Studio)
 
@@ -287,16 +304,16 @@ PawAI Studio = ChatGPT / OpenClaw 風格主入口 + AI 版 Foxglove 的機器狗
 #### 架構關係
 
 ```
-MiniMax-M2.5 / Qwen3.5 提建議
+Qwen2.5-7B-Instruct 提建議
   → Interaction Executive 做決策
   → Runtime 安全執行
 ```
 
-#### 雲端主腦 Roadmap
+#### 雲端主腦現況
 
-1. **第一版**：Qwen3.5-9B（先跑通大腦鏈路）
-2. **第二版**：Qwen3.5-27B（品質升級）
-3. **第三版（候選）**：Qwen3.5-35B-A3B 或 MiniMax-M2.5（尚未實測，作為研究候選）
+- **現行**：Qwen2.5-7B-Instruct on RTX 8000（vLLM，已驗證 E2E）
+- **升級候選**：更大參數模型，視伺服器穩定度決定
+- **本地 fallback**：Qwen2.5-0.8B（Jetson，雲端斷線時備援，智商待測）
 
 #### PawAI Studio 組成
 
@@ -310,11 +327,11 @@ MiniMax-M2.5 / Qwen3.5 提建議
 | Brain / Trace Panel | current intent / selected skill / why this action |
 | Module Health Panel | face / speech / cloud brain 的 active/inactive / latency |
 
-### 5.7 功能 6：辨識物體 (P2)
+### 5.7 功能 6：辨識物體 (P1 — 核心五功能)
 
-P0 穩了再做。比導航更容易出 Demo 效果，優先於功能 7。
+**教授定案為核心功能之一**（2026-03-18 會議）。核心五功能：人臉辨識、語音互動、手勢辨識、姿勢辨識、物體辨識。
 
-候選方向：YOLO26n（本地，候選）+ YOLO26x（雲端，候選），6 類 P0 物體。模型尚未實測。
+候選方向：YOLO 系列（本地 Jetson 推理），具體模型待測。4/2 後由其他成員研究。
 
 ### 5.8 功能 7：導航避障 (P2 / 最後才碰 / 不作為主交付依賴)
 
@@ -374,7 +391,7 @@ P0 穩了再做。比導航更容易出 Demo 效果，優先於功能 7。
 │  ├─ 狀態機 (State Machine)                                   │
 │  ├─ 技能分派器 (Skill Dispatcher)                            │
 │  ├─ 安全仲裁器 (Safety Guard)                                │
-│  ├─ Brain Adapter → Qwen3.5-9B/27B (雲端) 或 0.8B (本地)    │
+│  ├─ Brain Adapter → Qwen2.5-7B-Instruct (雲端) 或 0.8B (本地)│
 │  └─ PawAI Studio Backend (FastAPI + WebSocket)               │
 │  部署：Jetson (Executive) + RTX 8000 (Brain)                 │
 └─────────────────────────────────────────────────────────────┘
@@ -427,69 +444,55 @@ P0 穩了再做。比導航更容易出 Demo 效果，優先於功能 7。
 
 ---
 
-## 7. 團隊分工（3/12 更新版）
+## 7. 團隊分工（3/18 會議更新）
 
-### 7.1 核心分工策略
+### 7.1 團隊成員
 
-**3/16 前**：Roy 完成架構核心，讓其他人能在上面開發。
-**3/16 後**：楊/鄔轉攻 PawAI Studio 前端與應用層，黃/陳主攻文件網站。
+| 成員 | 角色 |
+|------|------|
+| Roy | 專案負責人 / System Architect / Integration Owner |
+| 魏宇同 | 前端開發 |
+| 黃旭 | 手勢/姿勢研究 → 前端 → 文件 |
+| 陳若恩 | 手勢/姿勢研究 → 前端 → 文件 |
+| 董為鳳 | 聯絡人 |
+
+### 7.2 核心分工策略
 
 **關鍵原則**：讓遠端沒有機器狗和設備的人也能進行分工。
 
-### 7.2 各角色職責
+### 7.3 各角色職責與時程
 
 #### Roy — System Architect / Integration Owner
 
-**3/16 前交付**：
-- 語音閉環：stt_intent_node + tts_node + Go2 播放
-- 人臉閉環：face_identity_infer_cv.py + 標準 state/event topic
-- FastAPI Gateway 骨架 + Event Schema 凍結
-- Mock Event Server（讓前端不用等真機就能開發）
-
-**3/16 後**：
-- 手勢/姿勢模組部署到 Jetson
-- Brain Adapter + Qwen3.5-9B 接入
-- 端到端整合測試 + Demo pipeline
-
-#### 鄔 — PawAI Studio 前端主力
-
-**前端元件清單**（不需硬體，純 Next.js + WebSocket）：
-
-| 元件 | 說明 |
+| 時段 | 任務 |
 |------|------|
-| `ChatPanel` | 對話主入口，WebSocket 接 Gateway |
-| `CameraPanel` | D435 即時影像 + 人臉框 |
-| `FacePanel` | 辨識結果、stable_name、信心度、距離 |
-| `SpeechPanel` | ASR 轉寫、Intent、對話歷史 |
-| `GesturePanel` | 手勢即時顯示 |
-| `PosePanel` | 姿勢狀態 + 骨架渲染 |
-| `TimelinePanel` | 事件流時間軸 |
-| `SystemHealthPanel` | Jetson CPU/GPU/RAM、模組狀態、延遲 |
-| `BrainPanel` | current intent / selected skill / trace |
-| `SkillButtons` | Stand / Sit / Wave / Stop 技能按鈕 |
-| Demo 頁 | 完整 Demo 流程展示 |
+| 本週（3/18–3/26） | 手勢/姿勢框架測試（Jetson GPU 模型） |
+| 3/23 | 審查前端網站成果 |
+| 3/26 後 | 接手前端修改、四功能整合（人臉+語音+手勢+姿勢） |
+| 4/2 後 | 加入導航避障等額外功能；穩定度優化、文件整理 |
 
-#### 楊 — 手勢/姿勢研究 → 3/16 後轉應用層
+#### 魏宇同 — 前端開發
 
-| 週次 | 交付物 |
-|------|--------|
-| 3/16 前 | 手勢方案報告 + 姿勢方案報告 + 小 demo |
-| 3/16 後 | Studio 裡的 gesture/pose 互動邏輯、Intent 擴充 |
+| 時段 | 任務 |
+|------|------|
+| 至 3/26 | 前端網站頁面開發 |
+| 4/2 後 | 文件網站 + 物體辨識研究 |
 
-#### 黃、陳 — 文件網站 + Mock Server
+#### 黃旭、陳若恩 — 研究 → 前端 → 文件
 
-| 交付物 | 說明 |
-|--------|------|
-| Astro + Starlight 文件站 | 架構演進、踩坑紀錄、環境建置、API 參考 |
-| 展示站首頁整合 | Hero 影片 + 功能亮點 + 團隊介紹 |
-| Mock Event Server | FastAPI 假資料生成器（讓前端不用等真機） |
-| 架構圖 | Draw.io 系統架構、資料流、新舊對比 |
+| 時段 | 任務 |
+|------|------|
+| 3/19 | 報告手勢/姿勢辨識研究成果（MediaPipe 結論 + 測試結果） |
+| 至 3/26 | 完成各自前端頁面 |
+| 4/2 後 | 文件網站 + 專題報告 |
 
 ---
 
 ## 8. Demo 與驗收
 
-### 8.1 Demo 主線
+### 8.1 Demo 策略（3/18 會議定案）
+
+**展示策略**：預設腳本為主、自由對話為輔（自由對話標註「效果不保證」）。
 
 | Demo | 名稱 | 內容 | 成功率 |
 |:----:|------|------|:------:|
@@ -515,8 +518,8 @@ P0 穩了再做。比導航更容易出 Demo 效果，優先於功能 7。
 
 | Level | 名稱 | 觸發條件 | 行為 |
 |:-----:|------|----------|------|
-| 0 | 雲端完整 | 網路正常 | Qwen3.5-9B/27B 完整對話 + Studio 全功能 |
-| 1 | 本地 LLM | 雲端斷線 | Qwen3.5-0.8B 基本對話 + 簡化 Studio |
+| 0 | 雲端完整 | 網路正常 | Qwen2.5-7B-Instruct 完整對話 + Studio 全功能 |
+| 1 | 本地 LLM | 雲端斷線 | Qwen2.5-0.8B 基本對話 + 簡化 Studio |
 | 2 | 規則模式 | Jetson 記憶體不足 | Rule Intent + 模板回覆 + 狀態顯示 |
 | 3 | 最小保底 | 系統壓力極大 | 喚醒 + ASR + 固定指令 |
 
@@ -714,8 +717,10 @@ Architect: spec → 拆 N 子模組 → Dispatch N Builder（worktree）
 | 喚醒詞 | Sherpa-onnx KWS | 中文原生、離線、Apache 2.0、省電門禁 |
 | 人臉方案 | 純本地 YuNet + SFace | 已覆蓋 Demo 需求，不上雲 |
 | AI 大腦定位 | 系統中樞大腦 | 事件理解 + 技能調度 + panel orchestration |
-| 雲端主腦 | Qwen3.5-9B → 27B | 先跑通再升級，不直接衝最大 |
+| 雲端主腦 | Qwen2.5-7B-Instruct (vLLM) | Qwen3.5-9B 不可用（多模態，啟動過慢） |
+| 本地 fallback | Qwen2.5-0.8B INT4 | 雲端斷線備援（智商待測） |
 | 降級策略 | 四級降級 | 雲端 → 0.8B → Rule → 最小保底 |
+| TTS | Piper（MeloTTS 已淘汰） | 輕量、速度快、本地合成 |
 | 網站策略 | 雙站（Studio + Docs） | 同 repo、分開部署，各司其職 |
 | Studio 技術棧 | React-based（暫定 Next.js） | 待正式確認 |
 | Docs 技術棧 | Astro + Starlight | 效能高、現代、適合文件 |
@@ -724,6 +729,6 @@ Architect: spec → 拆 N 子模組 → Dispatch N Builder（worktree）
 
 ---
 
-*最後更新：2026-03-15*
+*最後更新：2026-03-18*
 *維護者：System Architect*
-*狀態：v2.1（+模組開發 SOP）*
+*狀態：v2.2（+3/18 會議更新：時程、團隊、技術選型）*

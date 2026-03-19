@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link' // 🛡️ 修正 1：引入 Next.js 專屬的 Link
 import { Mic, History, ArrowLeft, FileText, Clock, Tag, Zap, Bot, Home } from 'lucide-react'
 import { PanelCard } from '@/components/shared/panel-card'
 import { EventItem } from '@/components/shared/event-item'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-// 🛡️ 修正：只留下真的有使用到的 SpeechState，刪除沒用到的型別避免 Lint 報錯
 import type { SpeechState } from '@/contracts/types'
 import { useStateStore } from '@/stores/state-store'
 import { useEventStore } from '@/stores/event-store'
@@ -114,7 +114,6 @@ export function SpeechPanel() {
   const recentEvents = [...speechEvents].reverse().slice(0, 10)
   const latestIntentEvent = [...speechEvents].find(e => e.event_type === 'intent_recognized')
 
-  // 🛡️ 修正：補上嚴格的型別宣告，讓 TypeScript 機器人不再報錯
   const eventData = latestIntentEvent?.data as { confidence?: number; provider?: string } | undefined
   const confidence = eventData?.confidence ? Number(eventData.confidence) : 0
 
@@ -167,8 +166,8 @@ export function SpeechPanel() {
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {/* 🛡️ 修正：明確告知 TypeScript 這個 evt 物件的長相 */}
-                {recentEvents.map((evt: { id: string; timestamp: string; event_type: string; source: string; data?: any }) => {
+                {/* 🛡️ 修正 2：不准用 any，乖乖寫出明確的 unknown 型別 */}
+                {recentEvents.map((evt: { id: string | number; timestamp: string | number; event_type: string; source: string; data?: unknown }) => {
                   let summary = String(evt.event_type)
                   const itemData = evt.data as { intent?: string; text?: string } | undefined
 
@@ -326,7 +325,8 @@ export function SpeechPanel() {
               </Button>
             </div>
 
-            <a href="/studio" className="w-full">
+            {/* 🛡️ 修正 3：使用正規的 Link 取代 a 標籤 */}
+            <Link href="/studio" className="w-full">
               <Button
                 type="button"
                 variant="ghost"
@@ -334,7 +334,7 @@ export function SpeechPanel() {
               >
                 <Home className="w-3.5 h-3.5 mr-1.5" /> 返回控制首頁
               </Button>
-            </a>
+            </Link>
           </div>
 
         </div>

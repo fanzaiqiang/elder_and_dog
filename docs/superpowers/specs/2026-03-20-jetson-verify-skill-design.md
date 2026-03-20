@@ -133,8 +133,9 @@ checks:
 ### 5.3 Precondition 規則
 
 - `precondition` 命令 returncode == 0 → 執行 check
-- `precondition` 命令 returncode > 0 → `SKIP`（不計分）
-- `precondition` 命令 transport/timeout 失敗 → `ERROR`
+- `precondition` 命令 returncode == 1 → `SKIP`（條件不成立，如 `grep -q` 沒匹配）
+- `precondition` 命令 returncode > 1 → `ERROR`（命令本身出錯，如 command not found = 127）
+- `precondition` 命令 transport/timeout 失敗（rc -1/-2）→ `ERROR`
 - **System / ROS2 基礎 checks 禁止有 precondition**
 - **只有 module-level checks 可以 SKIP**
 
@@ -184,7 +185,7 @@ checks:
 
 ```yaml
   - id: ros2.daemon
-    command: "source /opt/ros/humble/setup.bash && ros2 daemon status 2>&1 | grep -c running"
+    command: "source /opt/ros/humble/setup.bash && ros2 daemon status 2>&1 | grep -c 'is running' || true"
     expect: ">= 1"
     blocking: true
     timeout_sec: 10
@@ -255,11 +256,12 @@ CLI: python3 verify.py --profile smoke [--output-dir logs/jetson-verify/]
   │
   ├─ 4. Execute checks (YAML order = execution order)
   │    for each check:
-  │      a. precondition? → exec → pass=continue, fail=SKIP, error=ERROR
+  │      a. precondition? → exec → rc==0: continue, rc==1: SKIP, rc>1: ERROR
   │      b. exec_on_target(command, timeout_sec)
-  │         ├─ returncode -1 → ERROR (transport)
-  │         ├─ returncode -2 → ERROR (timeout)
-  │         └─ returncode >= 0 → parse with expect
+  │         ├─ returncode -1  → ERROR (transport)
+  │         ├─ returncode -2  → ERROR (timeout)
+  │         ├─ returncode > 0 → ERROR (command failed)
+  │         └─ returncode == 0 → parse stdout with expect
   │      c. evaluate expect:
   │         ├─ pass → PASS
   │         ├─ fail + blocking → FAIL
@@ -285,6 +287,7 @@ CLI: python3 verify.py --profile smoke [--output-dir logs/jetson-verify/]
 - **stdout 只有 JSON**：一次，完整，不混其他輸出
 - **stderr 是人類摘要**：`[PASS]`/`[WARN]`/`[FAIL]`/`[SKIP]`/`[ERROR]` 逐行 + summary
 - **check 執行順序 = YAML 定義順序**：system → ROS2 → modules（by convention）
+- **rc==0 才進 expect parser**：主 command 的 returncode > 0 直接判 ERROR。這要求 check commands 在「無資料但命令成功」的情境下仍回傳 rc=0 — 對 `grep -c` 等可能回非零的命令，需尾綴 `|| true` 強制 rc=0，讓 expect parser 根據 stdout 值判斷 PASS/FAIL。
 
 ### 6.3 JSON Output Schema
 
@@ -412,7 +415,11 @@ description: >
 
 4. **`detect_target_env()` 的假設**：非 Jetson 環境一律視為 `remote_jetson`，假設 SSH 到 jetson-nano 可用。這包含 WSL、macOS、CI container 等所有非 Jetson 平台。
 
-5. **v1 考慮加 `--dry-run` 參數**：載入 YAML 並印出 check 列表但不執行，方便開發和測試新 profile。
+5. **`grep -c` 和其他可能回非零的命令必須尾綴 `|| true`**：因為 `rc > 0` → ERROR，check commands 必須確保正常情境下 rc=0。`grep -c 'pattern' || true` 讓 grep 無匹配時回 rc=0 + stdout="0"，由 expect parser 判斷 PASS/FAIL。
+
+6. **precondition 的 `grep -q` 不需要 `|| true`**：precondition 語意是 rc==0 → run，rc==1 → SKIP。`grep -q` 的 rc=1（無匹配）正好是「條件不成立」= SKIP，不需要強制 rc=0。
+
+7. **v1 考慮加 `--dry-run` 參數**：載入 YAML 並印出 check 列表但不執行，方便開發和測試新 profile。
 
 ## 9. ralph-loop 安裝
 

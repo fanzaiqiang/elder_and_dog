@@ -65,6 +65,7 @@ class VisionPerceptionNode(Node):
         self.declare_parameter("rtmpose_mode", "balanced")  # "lightweight" or "balanced"
         self.declare_parameter("rtmpose_device", "cuda")    # "cuda" or "cpu"
         self.declare_parameter("gesture_min_score", 0.1)    # hand keypoint confidence threshold
+        self.declare_parameter("gesture_backend", "rtmpose")  # "rtmpose" or "mediapipe"
 
         backend = self.get_parameter("inference_backend").value
         self.use_camera = self.get_parameter("use_camera").value
@@ -103,6 +104,17 @@ class VisionPerceptionNode(Node):
             )
         else:
             raise ValueError(f"Unknown inference_backend: {backend}. Use 'mock' or 'rtmpose'.")
+
+        # --- Gesture backend (optional MediaPipe Hands for CPU-based hand detection) ---
+        gesture_backend = self.get_parameter("gesture_backend").value
+        self.mp_hands = None
+        if gesture_backend == "mediapipe":
+            from .mediapipe_hands import MediaPipeHands
+            self.mp_hands = MediaPipeHands(max_hands=2, min_confidence=0.5,
+                                            static_mode=False)
+            self.get_logger().info("Gesture backend: MediaPipe Hands (CPU)")
+        else:
+            self.get_logger().info("Gesture backend: RTMPose wholebody hand keypoints")
 
         # --- Camera subscription (only if use_camera=true) ---
         if self.use_camera:
@@ -167,12 +179,17 @@ class VisionPerceptionNode(Node):
             self.pose_pub.publish(msg)
 
         # --- Gesture classification (dual hand, pick higher confidence) ---
-        g_left, c_left = classify_gesture(
-            result.left_hand_kps, result.left_hand_scores,
-            min_score=self.gesture_min_score)
-        g_right, c_right = classify_gesture(
-            result.right_hand_kps, result.right_hand_scores,
-            min_score=self.gesture_min_score)
+        # Select hand keypoint source: MediaPipe (CPU) or RTMPose (from wholebody)
+        if self.mp_hands is not None and image is not None:
+            lh_kps, lh_scores, rh_kps, rh_scores = self.mp_hands.detect(image)
+        else:
+            lh_kps, lh_scores = result.left_hand_kps, result.left_hand_scores
+            rh_kps, rh_scores = result.right_hand_kps, result.right_hand_scores
+
+        g_left, c_left = classify_gesture(lh_kps, lh_scores,
+                                           min_score=self.gesture_min_score)
+        g_right, c_right = classify_gesture(rh_kps, rh_scores,
+                                             min_score=self.gesture_min_score)
 
         if c_left > c_right and g_left is not None:
             gesture_raw, gesture_conf, hand = g_left, c_left, "left"
@@ -181,10 +198,9 @@ class VisionPerceptionNode(Node):
         else:
             gesture_raw, gesture_conf, hand = None, 0.0, self.last_hand
 
-        # Debug: hand keypoint confidence (throttled to avoid log flood)
+        # Debug log (throttled)
         self.get_logger().info(
-            f"hand L={np.mean(result.left_hand_scores):.3f} "
-            f"R={np.mean(result.right_hand_scores):.3f} "
+            f"hand L={np.mean(lh_scores):.3f} R={np.mean(rh_scores):.3f} "
             f"gesture={gesture_raw} buf={len(self.gesture_buffer)}",
             throttle_duration_sec=5.0,
         )
@@ -212,10 +228,10 @@ class VisionPerceptionNode(Node):
                         if result.body_scores[i] > 0.3:
                             x, y = int(result.body_kps[i][0]), int(result.body_kps[i][1])
                             cv2.circle(debug, (x, y), 3, (0, 255, 0), -1)
-                    # Draw hand keypoints + bounding box
+                    # Draw hand keypoints + bounding box (from gesture source)
                     for hand_kps, hand_scores, color, label_text in [
-                        (result.left_hand_kps, result.left_hand_scores, (255, 100, 0), "L"),
-                        (result.right_hand_kps, result.right_hand_scores, (0, 100, 255), "R"),
+                        (lh_kps, lh_scores, (255, 100, 0), "L"),
+                        (rh_kps, rh_scores, (0, 100, 255), "R"),
                     ]:
                         valid_pts = []
                         for i in range(len(hand_kps)):
@@ -243,6 +259,8 @@ class VisionPerceptionNode(Node):
         self.shutting_down = True
         if hasattr(self, "timer") and self.timer is not None:
             self.timer.cancel()
+        if hasattr(self, "mp_hands") and self.mp_hands is not None:
+            self.mp_hands.close()
 
 
 def main():

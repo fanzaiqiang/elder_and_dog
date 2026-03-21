@@ -35,26 +35,25 @@
 | Mock Event Server | [AVAILABLE] | vision_perception mock_event_publisher 可直接用，循環發 gesture+pose 假事件 |
 | PawAI Studio | [PENDING] | 鄔負責，mock_event_publisher 已可接 |
 | LLM Brain | [STABLE] | Qwen2.5-7B-Instruct on RTX 8000，max_tokens 120，RuleBrain fallback 5/5 |
-| Benchmark 框架 | [USABLE] | Batch 0+1 完成（core + face YuNet），28 tests pass。待 Jetson 真實 benchmark |
+| Benchmark 框架 | [STABLE] | L1 全模型完成（face/pose/gesture/stt），L2 共存矩陣完成。3/25 決策數據齊全 |
 | 文件網站 | [PENDING] | 黃/陳負責，Astro + Starlight |
 
-## 近期焦點（3/20 更新）
+## 近期焦點（3/21 更新）
 
-**已完成（3/18-3/19）**：
-1. ✅ face_perception Jetson smoke（D435 + state/event/debug_image 全通）
-2. ✅ vision_perception Phase 1+2（mock mode + RTMPose 真推理，23 unit tests + Jetson 驗證）
-3. ✅ event_action_bridge + vision_status_display
-4. ✅ Foxglove 全線驗收（face + vision 同時跑無衝突）
-5. ✅ Benchmark 框架 Batch 0+1（core framework + face YuNet adapter，28 tests pass）
-6. ✅ 模型選型制度建立（Research Brief → Shortlist → Benchmark → Decision）
-7. ✅ face Research Brief（`docs/research/face.md`）
+**已完成（3/18-3/21）**：
+1. ✅ Benchmark 框架 Batch 0+1（core + 6 adapters: YuNet/SCRFD/RTMPose/MediaPipe/Whisper）
+2. ✅ L1 全模型基線（face 3 / pose 3 / gesture 2 / stt 2 = 10 個模型）
+3. ✅ L2 共存矩陣（face+pose / scrfd+pose / whisper+pose）
+4. ✅ MediaPipe ARM64 可安裝驗證（推翻先前結論）
+5. ✅ face Research Brief 決策回填（YuNet=主線, SCRFD=備援）
+6. ✅ Jetson 環境問題修復（onnxruntime GPU/CPU 衝突、numpy 降級、OpenCV 4.13 相容）
 
 **下一步**：
-1. rsync benchmark 到 Jetson，跑第一次真實 face benchmark（YuNet Level 1）
-2. Batch 2：pose + gesture research brief 整理 + RTMPose adapter（balanced + lightweight）
-3. 三模型同跑測試（face + pose，確認 GPU 預算）
-4. 外接喇叭/麥克風到貨後重測語音（預計 3/20-3/25）
-5. PawAI Studio 串接（鄔負責，mock_event_publisher 已可用）
+1. 本地 LLM benchmark（Qwen2.5-0.5B 等小模型 fallback）
+2. TTS benchmark（Piper vs MeloTTS）
+3. L3 全模型共存（face + pose + whisper 同時 30s）
+4. 外接喇叭/麥克風到貨後重測語音
+5. PawAI Studio 串接（鄔負責）
 
 ## 3/16 後分工
 

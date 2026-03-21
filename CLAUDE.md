@@ -161,7 +161,7 @@ ros2 launch vision_perception event_action_bridge.launch.py
 # 單一模型 benchmark（headless mode，不需 ROS2）
 python3 benchmarks/scripts/bench_single.py \
   --config benchmarks/configs/face_candidates.yaml \
-  --model yunet_legacy --level 1
+  --model yunet_2023mar --level 1
 
 # Jetson 環境鎖定（benchmark 前必做）
 sudo bash benchmarks/scripts/prepare_env.sh          # nvpmodel + jetson_clocks
@@ -171,6 +171,16 @@ sudo bash benchmarks/scripts/prepare_env.sh --drop-cache  # 含清 page cache
 **制度流程**：Research Brief (`docs/research/{task}.md`) → Candidate Shortlist (`benchmarks/configs/{task}_candidates.yaml`) → Benchmark → Decision
 
 **Spec**：[`docs/superpowers/specs/2026-03-19-unified-benchmark-framework-design.md`](docs/superpowers/specs/2026-03-19-unified-benchmark-framework-design.md)
+
+**3/21 L1 基線摘要**（完整數據見 `benchmarks/results/archive/`）：
+
+| Task | 主線模型 | FPS | GPU | Decision |
+|------|---------|:---:|:---:|:--------:|
+| face | YuNet 2023mar | 71.3 | CPU | JETSON_LOCAL |
+| pose+gesture | RTMPose lightweight | 17.6 | CUDA | JETSON_LOCAL |
+| stt | Whisper small | 2.6 (RTF 0.13) | CUDA | JETSON_LOCAL |
+
+**L2 共存**：face(CPU) + pose(CUDA) = -6%、pose(CUDA) + whisper(CUDA) = -20%
 
 ### 環境清理（語音模組）
 

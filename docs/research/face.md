@@ -1,6 +1,6 @@
 # 人臉辨識模型選型調查
 
-> 最後更新：2026-03-19
+> 最後更新：2026-03-21
 
 ## 目標效果
 - 偵測 + 識別 D435 視野內的人臉，距離 0.5-3m
@@ -8,11 +8,12 @@
 
 ## 候選模型
 
-| # | 模型 | 框架 | 輸出 | Installability | Runtime viability | GPU 路徑 | 社群性能參考 | 納入原因 | 預期淘汰條件 |
+| # | 模型 | 框架 | 輸出 | Installability | Runtime viability | GPU 路徑 | 實測性能 | 納入原因 | 預期淘汰條件 |
 |---|------|------|------|:-:|:-:|:-:|---|---|---|
-| 1 | YuNet (legacy) | OpenCV DNN | bbox + 5-point | verified | verified | cpu_only | ~6.6 Hz (Jetson 3/18 實測) | 現有主線，穩定 | — |
-| 2 | SCRFD-500M | ONNX Runtime | bbox + 5-point | likely | unknown | cuda | 推估 15+ Hz | InsightFace 推薦，更快更準 | 安裝失敗 or FPS 無明顯提升 |
-| 3 | SFace (recognition) | OpenCV DNN | 128-d embedding | verified | verified | cpu_only | 已驗證 | 現有主線 | — |
+| 1 | YuNet 2023mar | OpenCV DNN | bbox + 5-point | verified | verified | cpu_only | **71.3 FPS** (L1 實測) | 現有主線，CPU-only | — |
+| 2 | YuNet legacy | OpenCV DNN | bbox + 5-point | verified | **failed** | cpu_only | 0 FPS | OpenCV 4.13 不相容 | ~~已淘汰~~ |
+| 3 | SCRFD-500M | ONNX Runtime | bbox + 5-point | verified | verified | cuda | **34.7 FPS** (L1 實測) | InsightFace 推薦 | — |
+| 4 | SFace (recognition) | OpenCV DNN | 128-d embedding | verified | verified | cpu_only | 待測 | 現有識別主線 | — |
 
 ### 排除清單
 
@@ -31,7 +32,17 @@
 - GPU 預算：盡量 0%（CPU-only 最佳），允許最多 10%
 - 與 RTMPose 共存時 GPU 已 91-99%，人臉模組不應再吃 GPU
 
-## 決策（Stage 4 回填）
+## L2 共存測試（3/21 實測）
+
+| Target | Companion | FPS | vs L1 | 備註 |
+|--------|-----------|:---:|:-----:|------|
+| pose_lw | yunet@8Hz (CPU) | 16.5 | -6% | CPU+GPU 分離，最佳共存 |
+| pose_lw | scrfd@8Hz (GPU) | 15.8 | -10% | GPU 輕微競爭 |
+
+## 決策（3/21 回填）
 | 模型 | Decision Code | Placement | 依據 |
 |------|:---:|---|---|
-| | | | |
+| **YuNet 2023mar** | **JETSON_LOCAL** | jetson | 71.3 FPS CPU-only，對 pose 干擾最小（-6%），系統最佳解 |
+| SCRFD-500M | JETSON_LOCAL | jetson（備援） | 34.7 FPS CUDA，精度預期更高，但佔 GPU 使 pose 多掉 4% |
+| YuNet legacy | REJECTED | — | OpenCV 4.13 不相容 dynamic shape |
+| SFace | JETSON_LOCAL | jetson | 現有識別主線，待獨立 L1 benchmark |

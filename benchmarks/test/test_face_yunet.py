@@ -14,7 +14,7 @@ except ImportError:
 
 YUNET_MODEL = os.environ.get(
     "YUNET_MODEL_PATH",
-    "/home/jetson/face_models/face_detection_yunet_legacy.onnx",
+    "/home/jetson/face_models/face_detection_yunet_2023mar.onnx",
 )
 HAS_MODEL_FILE = os.path.isfile(YUNET_MODEL)
 

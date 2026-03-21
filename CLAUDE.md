@@ -128,16 +128,17 @@ bash scripts/clean_face_env.sh --all
 ### 手勢+姿勢 pipeline（vision_perception）
 
 ```bash
-# Phase 2 真推理（Jetson + D435，雙引擎：RTMPose pose + MediaPipe gesture）
+# 全 MediaPipe 模式（推薦，GPU 0%，pose+gesture 都走 CPU）
 colcon build --packages-select vision_perception
 source install/setup.zsh
 ros2 launch vision_perception vision_perception.launch.py \
+  inference_backend:=rtmpose use_camera:=true \
+  pose_backend:=mediapipe gesture_backend:=mediapipe
+
+# RTMPose + MediaPipe 混合（pose 走 GPU，gesture 走 CPU）
+ros2 launch vision_perception vision_perception.launch.py \
   inference_backend:=rtmpose use_camera:=true rtmpose_mode:=lightweight \
   gesture_backend:=mediapipe
-
-# 純 RTMPose 模式（手勢用 wholebody hand keypoints，精度較低）
-ros2 launch vision_perception vision_perception.launch.py \
-  inference_backend:=rtmpose use_camera:=true rtmpose_mode:=lightweight
 
 # Phase 1 mock mode（不需相機，開發機或 Jetson 都可）
 ros2 launch vision_perception vision_perception.launch.py \
@@ -182,7 +183,8 @@ sudo bash benchmarks/scripts/prepare_env.sh --drop-cache  # 含清 page cache
 | Task | 主線 | FPS | Decision | 備援 | Decision |
 |------|------|:---:|:--------:|------|:--------:|
 | face | YuNet 2023mar | 71.3 (CPU) | JETSON_LOCAL | SCRFD-500M | JETSON_LOCAL |
-| pose+gesture | RTMPose lightweight | 17.6 (CUDA) | JETSON_LOCAL | MediaPipe | HYBRID |
+| pose | MediaPipe Pose | 18.5 (CPU) | JETSON_LOCAL | RTMPose lw | JETSON_LOCAL |
+| gesture | MediaPipe Hands | 16.8 (CPU) | JETSON_LOCAL | — | — |
 | stt | Whisper small | RTF 0.13 (CUDA) | JETSON_LOCAL | Whisper tiny | JETSON_LOCAL |
 | tts | edge-tts | P50 1.13s | CLOUD | Piper huayan | JETSON_LOCAL |
 | llm (local) | Qwen2.5-0.5B | P50 0.8s, 139MB | JETSON_LOCAL | Qwen2.5-1.5B | HYBRID |

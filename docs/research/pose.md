@@ -45,9 +45,16 @@
 - numpy 必須 < 2（onnxruntime-gpu 1.23.0）
 - mediapipe 0.10.18 現在有 ARM64 wheel（推翻先前「不可安裝」結論）
 
-## 決策（3/21 回填）
+## 全 MediaPipe 壓測（3/21 晚）
+
+YuNet(CPU) + MediaPipe Pose(CPU) + MediaPipe Hands(CPU) 同時跑 30 秒：
+- Pose **18.5 FPS**、Hands **20.7 FPS**、YuNet 5.8 FPS
+- **GPU 0%**、RAM 4.1GB、溫度 54.9°C、零 crash
+- 效果與混合架構幾乎一致，GPU 完全釋放
+
+## 決策（3/21 晚更新）
 | 模型 | Decision Code | Placement | 依據 |
 |------|:---:|---|---|
-| **RTMPose lightweight** | **JETSON_LOCAL** | jetson（主線） | 17.6 FPS，一次推理出 pose+gesture，共存降幅可控 |
-| RTMPose balanced | JETSON_LOCAL | jetson（精度優先時） | 9.3 FPS，GPU 更重但精度更高 |
-| MediaPipe Pose | **HYBRID** | jetson（CPU fallback） | 13.5 FPS CPU-only，GPU 滿載時的備援 |
+| **MediaPipe Pose** | **JETSON_LOCAL** | jetson（**主線**） | 18.5 FPS CPU-only、GPU 0%、Foxglove 實測通過、效果等價 RTMPose |
+| RTMPose lightweight | JETSON_LOCAL | jetson（**備援**，需要 GPU 精度時） | 17.6 FPS CUDA，GPU 90%，手部 keypoints 不可靠 |
+| RTMPose balanced | JETSON_LOCAL | jetson（備援） | 9.3 FPS，精度最高但 GPU 最重 |

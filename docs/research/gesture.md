@@ -51,11 +51,12 @@ MediaPipe Hands 比 RTMPose wholebody 快 1.8 倍。
 D435 camera frame
   ↓
 vision_perception_node
-  ├── RTMPose lightweight (CUDA) → body keypoints → pose_classifier → /event/pose_detected
-  └── MediaPipe Hands (CPU)     → hand keypoints → gesture_classifier → /event/gesture_detected
+  ├── MediaPipe Pose (CPU)  → body keypoints → pose_classifier → /event/pose_detected
+  └── MediaPipe Hands (CPU) → hand keypoints → gesture_classifier → /event/gesture_detected
 ```
 
-Launch：`gesture_backend:=mediapipe`（預設仍為 rtmpose，需手動切換）
+Launch：`pose_backend:=mediapipe gesture_backend:=mediapipe`
+全 CPU 推理，GPU 0%，RTMPose 不載入。
 
 ## 決策（3/21 更新）
 | 模型 | Decision Code | Placement | 依據 |

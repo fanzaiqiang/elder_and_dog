@@ -212,15 +212,25 @@ class VisionPerceptionNode(Node):
                         if result.body_scores[i] > 0.3:
                             x, y = int(result.body_kps[i][0]), int(result.body_kps[i][1])
                             cv2.circle(debug, (x, y), 3, (0, 255, 0), -1)
-                    # Draw hand keypoints (lower threshold to show more points)
-                    for hand_kps, hand_scores, color in [
-                        (result.left_hand_kps, result.left_hand_scores, (255, 0, 0)),
-                        (result.right_hand_kps, result.right_hand_scores, (0, 0, 255)),
+                    # Draw hand keypoints + bounding box
+                    for hand_kps, hand_scores, color, label_text in [
+                        (result.left_hand_kps, result.left_hand_scores, (255, 100, 0), "L"),
+                        (result.right_hand_kps, result.right_hand_scores, (0, 100, 255), "R"),
                     ]:
+                        valid_pts = []
                         for i in range(len(hand_kps)):
-                            if hand_scores[i] > 0.1:
+                            if hand_scores[i] > 0.05:
                                 x, y = int(hand_kps[i][0]), int(hand_kps[i][1])
-                                cv2.circle(debug, (x, y), 3, color, -1)
+                                cv2.circle(debug, (x, y), 5, color, -1)
+                                valid_pts.append((x, y))
+                        # Draw hand bounding box if enough points
+                        if len(valid_pts) >= 5:
+                            xs = [p[0] for p in valid_pts]
+                            ys = [p[1] for p in valid_pts]
+                            cv2.rectangle(debug, (min(xs)-5, min(ys)-5),
+                                          (max(xs)+5, max(ys)+5), color, 2)
+                            cv2.putText(debug, label_text, (min(xs)-5, min(ys)-15),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
                     # Labels: pose + gesture + confidence
                     g_label = gesture_vote or gesture_raw or "?"
                     label = f"pose:{pose_vote or '?'}  gesture:{g_label} ({self.last_hand})"

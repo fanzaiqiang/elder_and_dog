@@ -30,6 +30,34 @@ models:
       metrics:
         min_pose_accuracy: 0.60
 
+  - name: mediapipe_pose
+    adapter: pose_mediapipe
+    params:
+      model_complexity: 1
+      min_detection_confidence: 0.5
+      static_image_mode: true
+
+    entry_criteria:
+      installability: verified
+      runtime_viability: verified
+      gpu_path: cpu_only
+      rationale: "MediaPipe 0.10.18 ARM64 可安裝，CPU-only ~12.9 FPS（feasibility 已驗證）"
+      reject_if: "精度不足 or CPU 競爭影響其他模組"
+
+    benchmark:
+      n_warmup: 20
+      n_measure: 100
+      input_source: benchmarks/test_inputs/images/
+
+    feasibility_gate:
+      min_fps: 5.0
+      max_ram_mb: 500
+      must_not_crash: true
+
+    quality_gate:
+      metrics:
+        min_pose_accuracy: 0.60
+
   - name: rtmpose_lightweight
     adapter: pose_rtmpose
     params:

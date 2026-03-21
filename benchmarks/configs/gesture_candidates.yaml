@@ -1,0 +1,59 @@
+task: gesture_recognition
+description: "手勢辨識模型選型 — Batch 2"
+
+models:
+  - name: rtmpose_hand
+    adapter: pose_rtmpose
+    params:
+      mode: balanced
+      device: cuda
+      backend: onnxruntime
+
+    entry_criteria:
+      installability: verified
+      runtime_viability: verified
+      gpu_path: cuda
+      rationale: "共用 RTMPose wholebody 的 hand keypoints，不額外佔模型資源"
+      reject_if: null
+
+    benchmark:
+      n_warmup: 20
+      n_measure: 100
+      input_source: benchmarks/test_inputs/images/
+
+    feasibility_gate:
+      min_fps: 2.0
+      max_ram_mb: 2000
+      must_not_crash: true
+
+    quality_gate:
+      metrics:
+        min_gesture_accuracy: 0.60
+
+  - name: mediapipe_hands
+    adapter: gesture_mediapipe
+    params:
+      max_num_hands: 2
+      min_detection_confidence: 0.5
+      static_image_mode: true
+
+    entry_criteria:
+      installability: verified
+      runtime_viability: verified
+      gpu_path: cpu_only
+      rationale: "MediaPipe 0.10.18 可在 Jetson ARM64 安裝，CPU-only ~15.7 FPS（feasibility 已驗證）"
+      reject_if: "精度不足 or 與 GPU 模型共存時 CPU 競爭嚴重"
+
+    benchmark:
+      n_warmup: 20
+      n_measure: 100
+      input_source: benchmarks/test_inputs/images/
+
+    feasibility_gate:
+      min_fps: 5.0
+      max_ram_mb: 500
+      must_not_crash: true
+
+    quality_gate:
+      metrics:
+        min_gesture_accuracy: 0.60

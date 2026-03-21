@@ -172,15 +172,17 @@ sudo bash benchmarks/scripts/prepare_env.sh --drop-cache  # 含清 page cache
 
 **Spec**：[`docs/superpowers/specs/2026-03-19-unified-benchmark-framework-design.md`](docs/superpowers/specs/2026-03-19-unified-benchmark-framework-design.md)
 
-**3/21 L1 基線摘要**（完整數據見 `benchmarks/results/archive/`）：
+**3/21 決策摘要**（完整數據見 `benchmarks/results/archive/` + `docs/research/`）：
 
-| Task | 主線模型 | FPS | GPU | Decision |
-|------|---------|:---:|:---:|:--------:|
-| face | YuNet 2023mar | 71.3 | CPU | JETSON_LOCAL |
-| pose+gesture | RTMPose lightweight | 17.6 | CUDA | JETSON_LOCAL |
-| stt | Whisper small | 2.6 (RTF 0.13) | CUDA | JETSON_LOCAL |
+| Task | 主線 | FPS | Decision | 備援 | Decision |
+|------|------|:---:|:--------:|------|:--------:|
+| face | YuNet 2023mar | 71.3 (CPU) | JETSON_LOCAL | SCRFD-500M | JETSON_LOCAL |
+| pose+gesture | RTMPose lightweight | 17.6 (CUDA) | JETSON_LOCAL | MediaPipe | HYBRID |
+| stt | Whisper small | RTF 0.13 (CUDA) | JETSON_LOCAL | Whisper tiny | JETSON_LOCAL |
+| tts | edge-tts | P50 1.13s | CLOUD | Piper huayan | JETSON_LOCAL |
+| llm (local) | Qwen2.5-0.5B | P50 0.8s, 139MB | JETSON_LOCAL | Qwen2.5-1.5B | HYBRID |
 
-**L2 共存**：face(CPU) + pose(CUDA) = -6%、pose(CUDA) + whisper(CUDA) = -20%
+**L2 共存**：face(CPU)+pose(CUDA) = -6%、SCRFD(GPU)+pose = -10%、whisper(CUDA)+pose = -20%
 
 ### 環境清理（語音模組）
 

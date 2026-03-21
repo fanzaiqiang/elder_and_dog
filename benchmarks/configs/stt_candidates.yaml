@@ -1,0 +1,59 @@
+task: stt
+description: "語音辨識模型選型 — Batch 3"
+
+models:
+  - name: whisper_small
+    adapter: stt_whisper
+    params:
+      model_size: small
+      device: cuda
+      compute_type: float16
+
+    entry_criteria:
+      installability: verified
+      runtime_viability: verified
+      gpu_path: cuda
+      rationale: "現有主線，faster-whisper small，CTranslate2 CUDA float16"
+      reject_if: null
+
+    benchmark:
+      n_warmup: 5
+      n_measure: 20
+      input_source: benchmarks/test_inputs/audio/
+
+    feasibility_gate:
+      min_fps: 0.5
+      max_ram_mb: 1500
+      must_not_crash: true
+
+    quality_gate:
+      metrics:
+        max_wer: 0.30
+
+  - name: whisper_tiny
+    adapter: stt_whisper
+    params:
+      model_size: tiny
+      device: cuda
+      compute_type: float16
+
+    entry_criteria:
+      installability: verified
+      runtime_viability: unknown
+      gpu_path: cuda
+      rationale: "Whisper tiny，比 small 更輕更快，精度待驗"
+      reject_if: "中文 WER 明顯惡化（> 0.40）"
+
+    benchmark:
+      n_warmup: 5
+      n_measure: 20
+      input_source: benchmarks/test_inputs/audio/
+
+    feasibility_gate:
+      min_fps: 0.5
+      max_ram_mb: 1000
+      must_not_crash: true
+
+    quality_gate:
+      metrics:
+        max_wer: 0.40

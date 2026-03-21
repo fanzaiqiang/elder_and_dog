@@ -304,4 +304,20 @@ edge-tts (雲端，音質最佳)
 | MeloTTS | 500-800MB | 0~10% | YES | B? | 高風險 | +0~-1 |
 | edge-tts + Piper | ~250MB | 0% | YES(fallback) | A/C | 中等 | **+2.5** |
 
-**結論**：**edge-tts + Piper 雙軌** 是最佳方案。先做 edge-tts benchmark 驗證延遲和穩定性，同時 A/B 測試 Piper 新聲音。MeloTTS 作為 Tier 2 備選，先嘗試 Jetson 安裝再決定。
+**結論**：**edge-tts + Piper 雙軌** 是最佳方案。
+
+## Benchmark 結果（3/21 Jetson 實測）
+
+| 模型 | P50 延遲 | P95 延遲 | RAM 增量 | 成功率 | 備註 |
+|------|:--------:|:--------:|:--------:|:------:|------|
+| **edge-tts** zh-TW | **1.13s** | 1.74s | ~0MB | 10/10 | 雲端 Microsoft Neural，音質 A |
+| **Piper** huayan | 2.03s | 2.14s | ~3MB | 10/10 | 本地 ONNX，穩定離線 |
+
+edge-tts 比 Piper 快 44%（1.13 vs 2.03s），RAM 零成本。
+
+## 決策（3/21 回填）
+| 模型 | Decision Code | Placement | 依據 |
+|------|:---:|---|---|
+| **edge-tts** | **CLOUD** | cloud（主線） | P50 1.13s、A 級音質、RAM 零成本 |
+| **Piper huayan** | **JETSON_LOCAL** | jetson（fallback） | P50 2.03s、離線穩定、已驗證 |
+| MeloTTS | PENDING | 待測 | ARM64 安裝風險（mecab），需先嘗試安裝 |

@@ -47,7 +47,17 @@
 | GPU | 0.1-0.3s | 0.5-0.8s | ~0.6-1.1s |
 | **CPU（推薦）** | 0.3-0.5s | 1.7-2.5s | **~2.0-3.0s** |
 
-## 決策（待 benchmark 回填）
+## Benchmark 結果（3/21 Jetson 實測，Ollama API）
+
+| 模型 | E2E P50 | E2E P95 | tok/s | RAM 增量 | 成功率 |
+|------|:-------:|:-------:|:-----:|:--------:|:------:|
+| **qwen2.5:0.5b** | **0.8s** | 3.0s | 40 | **139MB** | 10/10 |
+| qwen2.5:1.5b | 1.0s | 3.4s | 29 | 966MB | 10/10 |
+
+## 決策（3/21 回填）
 | 模型 | Decision Code | Placement | 依據 |
 |------|:---:|---|---|
-| | | | |
+| **Qwen2.5-0.5B** | **JETSON_LOCAL** | jetson | 0.8s P50、139MB RAM、40 tok/s，唯一能安全與其他模型同跑 |
+| Qwen2.5-1.5B | HYBRID | jetson（RTMPose 未跑時） | 品質更好但 966MB RAM，全模型同跑時有 OOM 風險 |
+| SmolLM2 | REJECTED | — | 不支援中文 |
+| Qwen3.5-0.8B | REJECTED | — | Ollama GGUF 不相容，待修復 |

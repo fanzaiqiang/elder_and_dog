@@ -8,9 +8,10 @@ Output: (pose_name, confidence) or (None, 0.0).
 Classification order (first match wins):
 1. fallen (safety priority)
 2. standing
-3. crouching
-4. sitting
-5. None (ambiguous)
+3. bending (trunk forward, legs straight)
+4. crouching
+5. sitting
+6. None (ambiguous)
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ import math
 
 import numpy as np
 
-POSES = ("standing", "sitting", "crouching", "fallen")
+POSES = ("standing", "sitting", "crouching", "fallen", "bending")
 
 # COCO body keypoint indices
 _L_SHOULDER, _R_SHOULDER = 5, 6
@@ -96,13 +97,18 @@ def classify_pose(
     if hip_angle > 160 and knee_angle > 160:
         return "standing", avg_score
 
-    # 3. crouching
+    # 3. bending (trunk leaning forward, legs mostly straight)
+    if (trunk_angle > 35 and hip_angle < 140 and knee_angle > 130
+            and (bbox_ratio is None or bbox_ratio <= 1.0)):
+        return "bending", avg_score
+
+    # 4. crouching
     if hip_angle < 80 and knee_angle < 80:
         return "crouching", avg_score
 
-    # 4. sitting
-    if 70 < hip_angle < 130 and trunk_angle < 30:
+    # 5. sitting
+    if 70 < hip_angle < 130 and trunk_angle < 35:
         return "sitting", avg_score
 
-    # 5. ambiguous
+    # 6. ambiguous
     return None, 0.0

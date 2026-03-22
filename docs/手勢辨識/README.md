@@ -129,11 +129,17 @@ keypoints, scores = wholebody(img)
 1. **Phase 1**（3/16-3/18）：✅ 完成 — mock mode + 23 unit tests + Jetson smoke test
 2. **Phase 2**（3/18）：✅ 完成 — RTMPose wholebody on Jetson，GPU 91-99%
 3. **Phase 2b**（3/21）：✅ 完成 — 決策：全 MediaPipe CPU（GPU 0%，16.8 FPS hands）
-4. **Phase 3**（3/22）：✅ 完成 — FPS 優化 2.5→8.5、骨架可視化（火柴人）、hands model_complexity=0、gesture_every_n_ticks=3 分頻、32 tests pass、Gesture Recognizer Task API Jetson 驗證通過（import OK、load 0.1s、inference 47ms）
-5. **Phase 4**（4/1-4/6）：手勢分類閾值校正 + live 測試
-6. **Phase 5**（4/6-4/13）：端到端測試 + Demo B 微調
+4. **Phase 3**（3/22）：✅ 完成 — FPS 優化 2.5→8.5、骨架可視化（火柴人）、型別安全、32 tests
+5. **Phase 3b**（3/22）：✅ 完成 — Gesture Recognizer Task API 整合為 `gesture_backend=recognizer` 選項。7 種內建手勢（stop/fist/point/thumbs_up/victory/thumbs_down/i_love_you）。Jetson live 測通過（7.2 FPS、手勢辨識正確、手部骨架 overlay 正常）。38 tests pass
+6. **Phase 4**（4/1-4/6）：live A/B 驗證 recognizer vs mediapipe → 決定是否升為預設
+7. **Phase 5**（4/6-4/13）：端到端測試 + Demo B 微調
 
-> **Gesture Recognizer Task API**（3/22 驗證）：MediaPipe 內建 7 種手勢辨識（Open_Palm=stop, Closed_Fist=fist, Pointing_Up=point, Thumb_Up, Victory 等）。Jetson 驗證通過但尚未整合到主線。現行方案：MediaPipe Hands + gesture_classifier.py 規則分類。
+> **三種 gesture backend**（3/22 更新）：
+> - `mediapipe`（現行預設）：MediaPipe Hands + gesture_classifier.py 規則，3 種手勢
+> - `recognizer`（新）：Gesture Recognizer Task API，7 種內建手勢，單模型一步到位
+> - `rtmpose`（已棄用）：RTMPose wholebody 手部 keypoints 不可靠
+>
+> 使用 recognizer：`gesture_backend:=recognizer`（launch override）
 
 ---
 

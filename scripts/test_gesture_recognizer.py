@@ -45,9 +45,9 @@ def ensure_model(model_path: str) -> str:
         return model_path
     except Exception as e:
         print(f"[FAIL] Download failed: {e}")
-        print(f"  Please manually download the model and place it at:")
+        print("  Please manually download the model and place it at:")
         print(f"    {model_path}")
-        print(f"  Or specify --model-path to an existing file.")
+        print("  Or specify --model-path to an existing file.")
         print(f"  URL: {_MODEL_URL}")
         sys.exit(1)
 
@@ -169,11 +169,11 @@ def test_live_stream(duration: int, device: int, model_path: str,
     avg_lat = sum(latencies) / len(latencies) if latencies else 0
     p50_lat = sorted(latencies)[len(latencies) // 2] if latencies else 0
 
-    print(f"\n  --- Results ---")
+    print("\n  --- Results ---")
     print(f"  Frames: {frame_count}")
     print(f"  FPS: {fps:.1f}")
     print(f"  Latency avg: {avg_lat:.1f}ms  P50: {p50_lat:.1f}ms")
-    print(f"  Gesture counts:")
+    print("  Gesture counts:")
     for g, c in sorted(gesture_counts.items(), key=lambda x: -x[1]):
         print(f"    {g:20s}: {c}")
 
@@ -213,7 +213,7 @@ def test_single_image(model_path: str) -> bool:
 
         n_gestures = len(result.gestures) if result.gestures else 0
         print(f"  Blank image: {n_gestures} hands detected, latency={latency:.1f}ms")
-        print(f"  [OK] recognize() works on this platform")
+        print("  [OK] recognize() works on this platform")
 
         recognizer.close()
         return True

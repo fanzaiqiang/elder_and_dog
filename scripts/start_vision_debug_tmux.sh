@@ -14,12 +14,12 @@ sleep 1
 
 echo "Starting D435..."
 tmux new-session -d -s "$SESSION" -n camera
-tmux send-keys -t "$SESSION:camera" "$ROS_SETUP && ros2 launch realsense2_camera rs_launch.py depth_module.depth_profile:=640x480x30 rgb_camera.color_profile:=640x480x30 pointcloud.enable:=false" Enter
+tmux send-keys -t "$SESSION:camera" "$ROS_SETUP && ros2 launch realsense2_camera rs_launch.py depth_module.depth_profile:=640x480x15 rgb_camera.color_profile:=640x480x15 pointcloud.enable:=false" Enter
 sleep 8
 
 echo "Starting vision_perception (full MediaPipe)..."
 tmux new-window -t "$SESSION" -n vision
-tmux send-keys -t "$SESSION:vision" "$ROS_SETUP && ros2 launch vision_perception vision_perception.launch.py inference_backend:=rtmpose use_camera:=true pose_backend:=mediapipe gesture_backend:=mediapipe" Enter
+tmux send-keys -t "$SESSION:vision" "$ROS_SETUP && ros2 launch vision_perception vision_perception.launch.py inference_backend:=rtmpose use_camera:=true pose_backend:=mediapipe gesture_backend:=mediapipe publish_fps:=15 max_hands:=2" Enter
 sleep 5
 
 echo "Starting vision_status_display..."

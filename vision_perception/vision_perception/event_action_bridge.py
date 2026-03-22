@@ -33,8 +33,8 @@ class EventActionBridge(Node):
         self.declare_parameter("gesture_cooldown", 3.0)
         self.declare_parameter("fallen_cooldown", 10.0)
 
-        self.gesture_cooldown = self.get_parameter("gesture_cooldown").value
-        self.fallen_cooldown = self.get_parameter("fallen_cooldown").value
+        self.gesture_cooldown = float(self.get_parameter("gesture_cooldown").value or 3.0)
+        self.fallen_cooldown = float(self.get_parameter("fallen_cooldown").value or 10.0)
 
         self._last_action_ts = {}  # action_name -> timestamp
 
@@ -85,7 +85,8 @@ class EventActionBridge(Node):
     def _on_gesture(self, msg: String):
         try:
             data = json.loads(msg.data)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            self.get_logger().warning(f"Invalid JSON in gesture event: {e}", throttle_duration_sec=5.0)
             return
 
         gesture = data.get("gesture")
@@ -114,7 +115,8 @@ class EventActionBridge(Node):
     def _on_pose(self, msg: String):
         try:
             data = json.loads(msg.data)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            self.get_logger().warning(f"Invalid JSON in pose event: {e}", throttle_duration_sec=5.0)
             return
 
         pose = data.get("pose")

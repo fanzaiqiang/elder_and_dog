@@ -31,21 +31,21 @@ def get_ram_mb():
                 if len(p) >= 2:
                     info[p[0].rstrip(":")] = int(p[1])
         return (info.get("MemTotal", 0) - info.get("MemAvailable", 0)) / 1024
-    except:
+    except Exception:
         return 0
 
 
 def get_gpu_load():
     try:
         return int(open("/sys/devices/gpu.0/load").read()) / 10.0
-    except:
+    except Exception:
         return 0.0
 
 
 def get_temp():
     try:
         return int(open("/sys/devices/virtual/thermal/thermal_zone1/temp").read()) / 1000.0
-    except:
+    except Exception:
         return 0.0
 
 

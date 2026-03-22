@@ -2,7 +2,6 @@
 """Tests for pose_classifier — pure Python, no ROS2."""
 import math
 import numpy as np
-import pytest
 
 
 def _body_from_angles(hip_angle_deg: float, knee_angle_deg: float,

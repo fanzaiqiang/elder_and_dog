@@ -41,9 +41,12 @@ class InteractionRouter(Node):
             self.get_parameter("fall_alert_cooldown").value or 15.0
         )
 
+        self._welcome_name_cooldown = 30.0  # same name within 30s → skip
+
         # State
         self._latest_face_state: dict | None = None
         self._welcomed_tracks: set[int] = set()
+        self._welcome_name_ts: dict[str, float] = {}  # name → last welcome timestamp
         self._fallen_first_ts: float | None = None
         self._fallen_timer = None  # ROS2 Timer, at most one
         self._last_action_ts: dict[str, float] = {}
@@ -111,12 +114,23 @@ class InteractionRouter(Node):
 
         result = should_welcome(data, self._welcomed_tracks)
         if result is not None:
+            name = result["name"]
+            # Name-based debounce: same person within 30s → skip
+            now = time.time()
+            last_ts = self._welcome_name_ts.get(name, 0.0)
+            if now - last_ts < self._welcome_name_cooldown:
+                self.get_logger().debug(
+                    f"Welcome skipped (name cooldown): {name}",
+                    throttle_duration_sec=5.0,
+                )
+                return
             self._welcomed_tracks.add(result["track_id"])
+            self._welcome_name_ts[name] = now
             out = String()
             out.data = json.dumps(result)
             self._welcome_pub.publish(out)
             self.get_logger().info(
-                f"WELCOME: {result['name']} (track {result['track_id']})"
+                f"WELCOME: {name} (track {result['track_id']})"
             )
 
     # ------------------------------------------------------------------

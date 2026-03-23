@@ -1,5 +1,5 @@
 'use client'
-import React from 'react'
+
 import { Activity } from 'lucide-react'
 import { PanelCard } from '@/components/shared/panel-card'
 import { MetricChip } from '@/components/shared/metric-chip'

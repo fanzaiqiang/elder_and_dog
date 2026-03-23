@@ -394,6 +394,8 @@ class VisionPerceptionNode(Node):
             self.mp_pose.close()
         if hasattr(self, "gesture_recognizer") and self.gesture_recognizer is not None:
             self.gesture_recognizer.close()
+        if hasattr(self, "adapter") and self.adapter is not None and hasattr(self.adapter, "close"):
+            self.adapter.close()
 
 
 def main():

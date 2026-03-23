@@ -113,6 +113,8 @@ class GestureRecognizerBackend:
         for gestures, handedness, landmarks in zip(
             result.gestures, result.handedness, result.hand_landmarks
         ):
+            if not gestures:
+                continue
             top_gesture = gestures[0]
             mp_name = top_gesture.category_name
             confidence = top_gesture.score
@@ -121,7 +123,9 @@ class GestureRecognizerBackend:
             # Convert normalized landmarks → pixel coords
             kps = np.array([[lm.x * w, lm.y * h] for lm in landmarks],
                            dtype=np.float32)
-            scores = np.full(21, confidence, dtype=np.float32)
+            # Use handedness score as uniform keypoint confidence
+            hand_conf = handedness[0].score
+            scores = np.full(21, hand_conf, dtype=np.float32)
 
             if hand_label == "left":
                 lh_kps, lh_scores = kps, scores

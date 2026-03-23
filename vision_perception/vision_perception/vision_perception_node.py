@@ -22,7 +22,20 @@ from std_msgs.msg import String
 from .event_builder import build_gesture_event, build_pose_event
 from .gesture_classifier import classify_gesture
 from .mock_inference import MockInference
-from .pose_classifier import classify_pose
+from .pose_classifier import (
+    classify_pose,
+    _angle_deg,
+    _trunk_angle_deg,
+    _mid,
+    _L_SHOULDER,
+    _R_SHOULDER,
+    _L_HIP,
+    _R_HIP,
+    _L_KNEE,
+    _R_KNEE,
+    _L_ANKLE,
+    _R_ANKLE,
+)
 
 # COCO 17-point skeleton pairs for stick figure visualization
 _SKELETON = [
@@ -251,6 +264,23 @@ class VisionPerceptionNode(Node):
         if pose_raw is not None:
             self.pose_buffer.append(pose_raw)
         pose_vote = _majority(self.pose_buffer)
+
+        # Pose debug log: print angles every ~1s (20 ticks)
+        if self._tick_counter % 20 == 0:
+            avg_score = float(np.mean(body_scores))
+            if avg_score >= 0.2:
+                shoulder = _mid(body_kps[_L_SHOULDER], body_kps[_R_SHOULDER])
+                hip = _mid(body_kps[_L_HIP], body_kps[_R_HIP])
+                knee = _mid(body_kps[_L_KNEE], body_kps[_R_KNEE])
+                ankle = _mid(body_kps[_L_ANKLE], body_kps[_R_ANKLE])
+                h_a = _angle_deg(shoulder, hip, knee)
+                k_a = _angle_deg(hip, knee, ankle)
+                t_a = _trunk_angle_deg(shoulder, hip)
+                br = bbox_ratio if bbox_ratio is not None else 0.0
+                self.get_logger().info(
+                    f"pose: raw={pose_raw} hip={h_a:.0f} knee={k_a:.0f} "
+                    f"trunk={t_a:.0f} bbox_r={br:.2f} vote={pose_vote}"
+                )
 
         if pose_vote is not None and pose_vote != self.last_pose:
             self.last_pose = pose_vote

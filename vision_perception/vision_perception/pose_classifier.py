@@ -94,7 +94,7 @@ def classify_pose(
         return "fallen", avg_score
 
     # 2. standing
-    if hip_angle > 160 and knee_angle > 160:
+    if hip_angle > 155 and knee_angle > 155:
         return "standing", avg_score
 
     # 3. bending (trunk leaning forward, legs mostly straight)
@@ -102,12 +102,12 @@ def classify_pose(
             and (bbox_ratio is None or bbox_ratio <= 1.0)):
         return "bending", avg_score
 
-    # 4. crouching
-    if hip_angle < 80 and knee_angle < 80:
+    # 4. crouching (relaxed thresholds + forward lean guard)
+    if hip_angle < 145 and knee_angle < 145 and trunk_angle > 10:
         return "crouching", avg_score
 
-    # 5. sitting
-    if 70 < hip_angle < 130 and trunk_angle < 35:
+    # 5. sitting (wider hip range, upright trunk)
+    if 100 < hip_angle < 150 and trunk_angle < 35:
         return "sitting", avg_score
 
     # 6. ambiguous

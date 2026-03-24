@@ -75,7 +75,7 @@ SYSTEM_PROMPT = """\
 JSON 必須包含以下五個欄位：
 
 intent — 只能是以下之一：greet, stop, sit, stand, status, chat, ignored
-reply_text — 你要說的中文回覆（一句話，不超過 25 字。人臉事件時要叫出對方名字）
+reply_text — 你要說的中文回覆（一句話，不超過 12 字。人臉事件時要叫出對方名字）
 selected_skill — 只能是以下之一："hello", "stop_move", "sit", "stand", null
 reasoning — 一句話決策摘要，不超過 20 字
 confidence — 0.0 到 1.0
@@ -89,7 +89,7 @@ confidence — 0.0 到 1.0
 - 聽到問狀態（「怎麼樣」「在做什麼」「狀態」等）：intent=status，reply_text 必須說明目前狀況
 - 不確定時：intent=chat，reply_text 必須是友善的回應
 - greet/chat/status 的 reply_text 必須非空（只有 stop 和 ignored 允許空）
-- reply_text 不超過 25 字
+- reply_text 不超過 12 字
 - 除了 JSON 不要輸出任何文字"""
 
 
@@ -152,7 +152,7 @@ class LlmBridgeNode(Node):
         self.declare_parameter("llm_model", "Qwen/Qwen2.5-7B-Instruct")
         self.declare_parameter("llm_timeout", 15.0)
         self.declare_parameter("llm_temperature", 0.2)
-        self.declare_parameter("llm_max_tokens", 120)
+        self.declare_parameter("llm_max_tokens", 80)
         self.declare_parameter("intent_event_topic", "/event/speech_intent_recognized")
         self.declare_parameter("face_event_topic", "/event/face_identity")
         self.declare_parameter("face_state_topic", "/state/perception/face")
@@ -392,6 +392,21 @@ class LlmBridgeNode(Node):
             self.get_logger().error(self.last_error)
             return None
 
+        return self._post_process_reply(result)
+
+    # ── Reply post-processing (hard limits) ──────────────────────────────
+
+    MAX_REPLY_CHARS = 12
+
+    def _post_process_reply(self, result: dict) -> dict:
+        """Enforce hard reply_text length limit. Small LLMs ignore prompt constraints."""
+        reply = str(result.get("reply_text", "")).strip()
+        # Remove stray emoji
+        import re
+        reply = re.sub(r"[\U0001f300-\U0001f9ff]", "", reply).strip()
+        if len(reply) > self.MAX_REPLY_CHARS:
+            reply = reply[: self.MAX_REPLY_CHARS]
+        result["reply_text"] = reply
         return result
 
     def _dispatch(self, result: dict, source: str) -> None:

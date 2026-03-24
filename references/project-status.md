@@ -23,7 +23,10 @@
 - **外接 USB 麥克風+喇叭驗證通過**（E2E: mic → ASR → intent → TTS → speaker）
 - tts_node 新增 `local_output_device` 參數，`_play_locally()` 改用 aplay 指定 ALSA device
 - start_llm_e2e_tmux.sh 預設改為 USB 外接設備（可用環境變數切回 HyperX/Megaphone）
-- 發現 Whisper int8 on Jetson CPU 不可用（必須 cuda + float16）
+- stt_intent_node 新增 `mic_gain` 參數：VAD 用原始 RMS、錄音送 ASR 前再放大（gain x4 → ASR 2/8→4/5）
+- **qwen2.5:1.5b 本地 LLM 驗證通過**：JSON parse 6/6，中文穩定，建議為本地 fallback 主力
+- Echo 自激 5/5 無觸發，cooldown 1000ms 足夠
+- 本地 E2E 延遲基線：P50 8.1s / P95 13.6s
 
 ### 3/23
 

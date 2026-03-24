@@ -54,6 +54,24 @@ ros2 topic pub --once /tts std_msgs/msg/String '{data: "測試播放"}'
 - Piper 原生 22050Hz 直出，清晰度相比 Megaphone 16kHz 大幅改善
 - `LD_LIBRARY_PATH` 必須含 `/home/jetson/.local/ctranslate2-cuda/lib`（啟動腳本已處理）
 - Whisper 必須用 `device=cuda, compute_type=float16`（Jetson CPU 不支援 int8）
+- **mic_gain**：USB 麥克風靈敏度低，需 `-p mic_gain:=4.0`。gain 只作用在送 Whisper 的錄音，不影響 VAD 閾值判斷
+
+## 本地 LLM 驗證（2026-03-24）
+
+- **qwen2.5:1.5b**（Ollama）：JSON parse 6/6 = 100%，中文穩定，零 fallback → 建議為本地 fallback 主力
+- **qwen2.5:0.5b**：JSON parse 2/8 = 25%，語言漂移嚴重 → 不適合作為 fallback
+- intent 映射偏差（come_here/stop/take_photo）→ system prompt 待修
+- 用法：`-p llm_endpoint:=http://localhost:11434/v1/chat/completions -p llm_model:=qwen2.5:1.5b`
+
+## 本地 E2E 延遲基線（2026-03-24）
+
+| 階段 | P50 | P95 |
+|------|:---:|:---:|
+| VAD 錄音 | 2.1s | 4.7s |
+| ASR (Whisper Small) | 1.0s | 1.9s |
+| LLM (1.5B Ollama) | 2.3s | 5.5s |
+| TTS + 播放 | 2.9s | 4.8s |
+| **E2E** | **8.1s** | **13.6s** |
 
 ## 已知陷阱
 
@@ -62,7 +80,8 @@ ros2 topic pub --once /tts std_msgs/msg/String '{data: "測試播放"}'
 - **USB 喇叭 card number 可能漂移**：拔插後 `aplay -l` 確認
 - **Megaphone cooldown**：4002 EXIT 後 sleep 0.5s（Megaphone 模式）
 - **ASR warmup**：daemon thread 預熱 Whisper CUDA ~12s
-- **Whisper 幻覺**：靜音/噪音段可能被誤解為假文字
+- **Whisper 幻覺**：靜音/噪音段可能被誤解為假文字（mic_gain 過高會加劇）
+- **USB 麥克風靈敏度低**：必須用 `mic_gain:=4.0`，gain 太高（>8）會使噪音放大到影響 ASR
 
 ## 測試
 

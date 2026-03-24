@@ -76,17 +76,23 @@ bash scripts/smoke_test_e2e.sh 5
 - 省掉 LLM 2.3s，TTS cache hit 後 E2E ~2.6s
 - `status/chat/unknown` + 人臉事件仍走 LLM
 
-## 延遲基線（2026-03-24）
+## 延遲基線（2026-03-24 最終）
 
 | 路徑 | E2E P50 | 說明 |
 |------|:------:|------|
-| fast path + edge-tts（首次） | **~3.4s** | 已知 intent，跳過 LLM |
-| fast path + cache hit | **~2.6s** | 模板回覆第二次起 |
-| LLM path + edge-tts | **~6.0s** | chat/status 走 Ollama 1.5B |
-| 全本地 Piper（基線） | **8.1s** | 所有都走 LLM + Piper |
+| stop/sit/stand（fast path, 不播 TTS） | **0.002s** | 只發動作，瞬間完成 |
+| greet（fast path + cache） | **2.34s** | 模板回覆 + cache hit |
+| Cloud LLM + cache hit | **3.97s** | 重複句第二次起 |
+| Cloud LLM + edge-tts | **4.48s** | chat/status/come_here |
+| Local LLM + edge-tts | **~6.0s** | Ollama 1.5B fallback |
+| 全本地 Piper（保底） | **8.1s** | 所有都走 LLM + Piper |
+
+### 動作 intent 不播 TTS
+stop/sit/stand 只發動作指令，跳過 TTS。由 `_dispatch()` 和 `_rule_fallback()` 的 `ACTION_ONLY_SKILLS`/`ACTION_ONLY_INTENTS` 控制。
 
 ## 已知陷阱
 
+- **stop/sit/stand 不播 TTS**：只發動作，這是設計決策不是 bug
 - **VAD 斷句 2-10s** 是最大延遲瓶頸，不是 LLM
 - **Whisper int8 on Jetson CPU 不可用**：必須用 `cuda` + `float16`，否則 silent fail
 - **USB 喇叭 card number 可能漂移**：拔插後 `aplay -l` 確認

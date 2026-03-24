@@ -9,7 +9,7 @@
 
 | 模組 | 狀態 | 最後驗證 | 備註 |
 |------|------|----------|------|
-| 語音 (speech_processor) | **edge-tts + fast path** | 3/24 | 已知 intent ~3.4s，LLM path ~6s，edge-tts 主線 |
+| 語音 (speech_processor) | **Demo ready** | 3/24 | stop 0s / greet 2.3s / Cloud LLM 4.5s，edge-tts + fast path + cache warmup |
 | 人臉 (face_perception) | Jetson smoke 通過 | 3/18 | QoS 3/23 已修（RELIABLE→BEST_EFFORT），待上機驗證 |
 | 手勢 (vision_perception) | Phase 1 完成 | 3/23 | Gesture Recognizer 模式穩定，23 unit tests |
 | 姿勢 (vision_perception) | Phase 1 完成 | 3/23 | MediaPipe Pose CPU 18.5 FPS |

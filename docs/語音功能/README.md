@@ -90,9 +90,36 @@ ros2 run speech_processor llm_bridge_node --ros-args \
 
 ---
 
-## Go2 音訊播放（2026-03-17 更新）
+## Go2 音訊播放（2026-03-24 更新）
 
-### 主線方案：Megaphone DataChannel（已驗證可用）
+### 主線方案：USB 外接喇叭 Local Playback（2026-03-24 驗證通過）
+
+外接 USB 喇叭直接從 Jetson 播放 TTS 音訊，繞過 Go2 Megaphone 的 16kHz 降採樣限制。
+
+**設備**：Jieli Technology CD002-AUDIO（ALSA `hw:3,0`，stereo，48kHz）
+
+**播放流程**：
+```
+tts_node 生成音訊（Piper 原生 22050Hz）
+  → pydub AudioSegment → export WAV temp file
+  → aplay -D plughw:3,0 → USB 喇叭直出
+```
+
+**啟動方式**：
+```bash
+ros2 run speech_processor tts_node --ros-args \
+  -p local_playback:=true \
+  -p local_output_device:=plughw:3,0 \
+  -p provider:=piper \
+  -p piper_model_path:=/home/jetson/models/piper/zh_CN-huayan-medium.onnx \
+  -p piper_length_scale:=0.85
+```
+
+**注意**：首次使用需拉滿音量 `amixer -c 3 set PCM 147`（啟動腳本已自動處理）。
+
+**優勢**：Piper 原生 22050Hz 直出，清晰度相比 Megaphone（16kHz 降採樣）大幅改善。
+
+### 備選方案：Megaphone DataChannel（已驗證可用）
 
 Go2 透過 DataChannel 的 Megaphone API（4001/4003/4002）播放 TTS 音訊。
 
@@ -153,7 +180,7 @@ WebRTC audio track (sendonly) 的 SDP negotiation、RTP 封包發送均正常，
 - ⚠️ 人工測試回饋「有點聽不懂」— 16kHz 採樣率丟失高頻，語音偏糊
 - +16dB gain boost 音量可接受但有輕微爆音
 - **length_scale A/B 結論**：0.85 vs 1.00 差異不明顯，都糊。主因是 16kHz 降採樣（Piper 原生 22050Hz → Megaphone 要求 16kHz），不是語速問題。維持 0.85
-- 已訂購外接 USB 喇叭（NT$199）+ USB 麥克風（NT$120），3/20-25 到貨，用 `playback_method=local` 繞過 Megaphone 16kHz 限制
+- ✅ 外接 USB 喇叭已到貨（2026-03-24 驗證通過），使用 `local_playback=true` 繞過 16kHz 限制，清晰度大幅改善
 
 **Echo gate**：
 - ✅ 已修復：tts_playing(True) 提前到 TTS request 入口
@@ -219,10 +246,21 @@ WebRTC audio track (sendonly) 的 SDP negotiation、RTP 封包發送均正常，
 
 ## Jetson 麥克風注意事項
 
+### 主線：USB 外接麥克風（2026-03-24 驗證通過）
+
+- **Jieli Technology UACDemoV1.0**（ALSA `hw:2,0`，sounddevice index **24**）
+- **mono**（channels=1），原生 **48000Hz**，S16_LE
+- 不需要 stereo downmix hack
+- `stt_intent_node` 用 `-p input_device:=24 -p channels:=1 -p capture_sample_rate:=48000`
+- Whisper 參數：`-p whisper_local.device:=cuda -p whisper_local.compute_type:=float16 -p whisper_local.model_name:=small`
+- **注意**：Jetson 需設定 `LD_LIBRARY_PATH=/home/jetson/.local/ctranslate2-cuda/lib`（啟動腳本已處理）
+
+### 備用：HyperX SoloCast
+
 - **HyperX SoloCast（4P5P8AA）** 硬體只支援 **stereo（2ch）** 錄音
 - `stt_intent_node` 必須用 `channels:=2`，callback 內手動取左聲道做 mono downmix
 - 不要用 `channels:=1`，Jetson PortAudio ALSA backend 的 auto-downmix 會撞 `-9985` / `-9998`
-- 驗證方式：`arecord -D hw:0,0 --dump-hw-params /dev/null 2>&1 | grep CHANNELS`
+- 切回 HyperX：`INPUT_DEVICE=0 CHANNELS=2 CAPTURE_SAMPLE_RATE=44100 bash scripts/start_llm_e2e_tmux.sh`
 
 > 詳見 `docs/語音功能/jetson-MVP測試.md` §15.5
 

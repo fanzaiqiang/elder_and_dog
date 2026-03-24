@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# LLM E2E tmux launcher — ASR + LLM Bridge + TTS (audio_track) + Go2 Driver
+# LLM E2E tmux launcher — ASR + LLM Bridge + TTS + Go2 Driver
 #
 # Usage:
 #   bash scripts/start_llm_e2e_tmux.sh
 #
 # Environment overrides:
-#   LLM_ENDPOINT  — LLM API URL (default: http://localhost:8000/v1/chat/completions)
-#   LLM_MODEL     — Model name  (default: Qwen/Qwen3.5-9B)
-#   LLM_TIMEOUT   — Request timeout in seconds (default: 5.0)
-#   ROBOT_IP      — Go2 IP (default: 192.168.123.161)
+#   LLM_ENDPOINT       — LLM API URL (default: http://localhost:8000/v1/chat/completions)
+#   LLM_MODEL          — Model name  (default: Qwen/Qwen2.5-7B-Instruct)
+#   LLM_TIMEOUT        — Request timeout in seconds (default: 5.0)
+#   ROBOT_IP           — Go2 IP (default: 192.168.123.161)
+#   LOCAL_PLAYBACK     — true=USB speaker, false=Go2 Megaphone (default: true)
+#   LOCAL_OUTPUT_DEVICE — ALSA device for local playback (default: plughw:3,0)
+#   INPUT_DEVICE       — sounddevice index for mic (default: 24=USB, 0=HyperX)
+#   CHANNELS           — mic channels (default: 1=USB mono, 2=HyperX stereo)
+#   CAPTURE_SAMPLE_RATE — mic native sample rate (default: 48000)
 #
 # Requires SSH tunnel if using localhost:
 #   ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5
@@ -36,9 +41,10 @@ ASR_MODEL="small"
 ASR_DEVICE="cuda"
 ASR_COMPUTE_TYPE="float16"
 ASR_CPU_THREADS="4"
-INPUT_DEVICE="0"
+INPUT_DEVICE="${INPUT_DEVICE:-24}"          # 24=UACDemoV1.0 USB mic, 0=HyperX SoloCast
+CHANNELS="${CHANNELS:-1}"                    # 1=USB mic (mono), 2=HyperX (stereo-only)
 SAMPLE_RATE="16000"
-CAPTURE_SAMPLE_RATE="44100"
+CAPTURE_SAMPLE_RATE="${CAPTURE_SAMPLE_RATE:-48000}"  # 48000=USB mic, 44100=HyperX
 MAX_RECORD_SECONDS="10.0"
 SPEECH_END_GRACE_MS="250"
 
@@ -50,7 +56,9 @@ PIPER_SPEAKER_ID="0"
 PIPER_LENGTH_SCALE="0.85"
 PIPER_NOISE_SCALE="0.45"
 PIPER_NOISE_W="0.55"
-PLAYBACK_METHOD="datachannel"
+LOCAL_PLAYBACK="${LOCAL_PLAYBACK:-true}"              # true=USB speaker, false=Go2 Megaphone
+LOCAL_OUTPUT_DEVICE="${LOCAL_OUTPUT_DEVICE:-plughw:3,0}"  # CD002-AUDIO USB speaker
+PLAYBACK_METHOD="datachannel"                        # fallback when local_playback=false
 ROBOT_CHUNK_INTERVAL_SEC="0.06"
 ROBOT_PLAYBACK_TAIL_SEC="0.5"
 ROBOT_VOLUME="80"
@@ -123,7 +131,7 @@ GO2_PANE="$(tmux list-panes -t "$SESSION_NAME":0 -F '#{pane_id}')"
 
 # Pane 2: STT Intent Node (ASR)
 STT_PANE="$(tmux split-window -h -P -F '#{pane_id}' -t "$GO2_PANE" \
-  "zsh -lc 'setopt nonomatch; cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export LD_LIBRARY_PATH=$CT2_LIB_PATH:\${LD_LIBRARY_PATH:-} && ros2 run speech_processor stt_intent_node --ros-args -p provider_order:=\"$ASR_PROVIDER_ORDER\" -p whisper_local.model_name:=$ASR_MODEL -p whisper_local.device:=$ASR_DEVICE -p whisper_local.compute_type:=$ASR_COMPUTE_TYPE -p whisper_local.cpu_threads:=$ASR_CPU_THREADS -p input_device:=$INPUT_DEVICE -p sample_rate:=$SAMPLE_RATE -p capture_sample_rate:=$CAPTURE_SAMPLE_RATE -p max_record_seconds:=$MAX_RECORD_SECONDS -p speech_end_grace_ms:=$SPEECH_END_GRACE_MS'")"
+  "zsh -lc 'setopt nonomatch; cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export LD_LIBRARY_PATH=$CT2_LIB_PATH:\${LD_LIBRARY_PATH:-} && ros2 run speech_processor stt_intent_node --ros-args -p provider_order:=\"$ASR_PROVIDER_ORDER\" -p whisper_local.model_name:=$ASR_MODEL -p whisper_local.device:=$ASR_DEVICE -p whisper_local.compute_type:=$ASR_COMPUTE_TYPE -p whisper_local.cpu_threads:=$ASR_CPU_THREADS -p input_device:=$INPUT_DEVICE -p channels:=$CHANNELS -p sample_rate:=$SAMPLE_RATE -p capture_sample_rate:=$CAPTURE_SAMPLE_RATE -p max_record_seconds:=$MAX_RECORD_SECONDS -p speech_end_grace_ms:=$SPEECH_END_GRACE_MS'")"
 
 # Pane 3: LLM Bridge Node (replaces intent_tts_bridge_node)
 tmux split-window -v -t "$STT_PANE" \
@@ -131,7 +139,7 @@ tmux split-window -v -t "$STT_PANE" \
 
 # Pane 4: TTS Node (Piper + audio_track)
 tmux split-window -v -t "$GO2_PANE" \
-  "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export PATH=\"$HOME/.local/bin:\$PATH\" && ros2 run speech_processor tts_node --ros-args -p provider:=$TTS_PROVIDER -p piper_model_path:=$PIPER_MODEL_PATH -p piper_config_path:=$PIPER_CONFIG_PATH -p piper_speaker_id:=$PIPER_SPEAKER_ID -p piper_length_scale:=$PIPER_LENGTH_SCALE -p piper_noise_scale:=$PIPER_NOISE_SCALE -p piper_noise_w:=$PIPER_NOISE_W -p playback_method:=$PLAYBACK_METHOD -p robot_chunk_interval_sec:=$ROBOT_CHUNK_INTERVAL_SEC -p robot_playback_tail_sec:=$ROBOT_PLAYBACK_TAIL_SEC -p robot_volume:=$ROBOT_VOLUME'"
+  "zsh -lc 'cd $WORKDIR && source /opt/ros/humble/setup.zsh && source install/setup.zsh && export PATH=\"$HOME/.local/bin:\$PATH\" && amixer -c 3 set PCM 147 >/dev/null 2>&1; ros2 run speech_processor tts_node --ros-args -p provider:=$TTS_PROVIDER -p piper_model_path:=$PIPER_MODEL_PATH -p piper_config_path:=$PIPER_CONFIG_PATH -p piper_speaker_id:=$PIPER_SPEAKER_ID -p piper_length_scale:=$PIPER_LENGTH_SCALE -p piper_noise_scale:=$PIPER_NOISE_SCALE -p piper_noise_w:=$PIPER_NOISE_W -p local_playback:=$LOCAL_PLAYBACK -p local_output_device:=$LOCAL_OUTPUT_DEVICE -p playback_method:=$PLAYBACK_METHOD -p robot_chunk_interval_sec:=$ROBOT_CHUNK_INTERVAL_SEC -p robot_playback_tail_sec:=$ROBOT_PLAYBACK_TAIL_SEC -p robot_volume:=$ROBOT_VOLUME'"
 
 # ════════════════════════════════════════════════════
 # Layout & options
@@ -144,7 +152,8 @@ tmux set-option -t "$SESSION_NAME" remain-on-exit on >/dev/null
 echo "[OK] Started $SESSION_NAME (LLM E2E)"
 echo "[INFO] LLM endpoint: $LLM_ENDPOINT"
 echo "[INFO] Model: $LLM_MODEL"
-echo "[INFO] Playback: $PLAYBACK_METHOD"
+echo "[INFO] Playback: local=$LOCAL_PLAYBACK device=$LOCAL_OUTPUT_DEVICE (fallback=$PLAYBACK_METHOD)"
+echo "[INFO] Mic: device=$INPUT_DEVICE channels=$CHANNELS rate=$CAPTURE_SAMPLE_RATE"
 echo "[INFO] Verify: bash scripts/e2e_health_check.sh"
 
 tmux attach -t "$SESSION_NAME"

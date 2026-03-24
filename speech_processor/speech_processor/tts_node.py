@@ -95,6 +95,7 @@ class TTSConfig:
     provider: TTSProvider = TTSProvider.ELEVENLABS
     voice_name: str = "XrExE9yKIg1WjnnlVkGX"
     local_playback: bool = False
+    local_output_device: str = ""  # ALSA device, e.g. "plughw:3,0"
     use_cache: bool = True
     cache_dir: str = "tts_cache"
     chunk_size: int = 16 * 1024
@@ -474,6 +475,7 @@ class EnhancedTTSNode(Node):
             "voice_name", _env_str("TTS_VOICE_NAME", "XrExE9yKIg1WjnnlVkGX")
         )
         self.declare_parameter("local_playback", False)
+        self.declare_parameter("local_output_device", "")
         self.declare_parameter("use_cache", True)
         self.declare_parameter("cache_dir", "tts_cache")
         self.declare_parameter("chunk_size", 16384)
@@ -519,6 +521,9 @@ class EnhancedTTSNode(Node):
             local_playback=self.get_parameter("local_playback")
             .get_parameter_value()
             .bool_value,
+            local_output_device=self.get_parameter("local_output_device")
+            .get_parameter_value()
+            .string_value,
             use_cache=self.get_parameter("use_cache").get_parameter_value().bool_value,
             cache_dir=self.get_parameter("cache_dir")
             .get_parameter_value()
@@ -682,11 +687,28 @@ class EnhancedTTSNode(Node):
             self._publish_tts_playing(False)
 
     def _play_locally(self, audio_data: bytes) -> None:
-        """Play audio locally"""
+        """Play audio locally via ALSA device or pydub fallback."""
         try:
             self._publish_tts_playing(True)
             audio = AudioSegment.from_file(io.BytesIO(audio_data))
-            play(audio)
+
+            if self.config.local_output_device:
+                # Use aplay with explicit ALSA device
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    tmp_path = f.name
+                    audio.export(f, format="wav")
+                try:
+                    subprocess.run(
+                        ["aplay", "-D", self.config.local_output_device, tmp_path],
+                        check=True,
+                        capture_output=True,
+                        timeout=30,
+                    )
+                finally:
+                    os.unlink(tmp_path)
+            else:
+                play(audio)
+
             self.get_logger().info("🔊 Local playback completed")
         except Exception as e:
             self.get_logger().error(f"❌ Local playback error: {str(e)}")

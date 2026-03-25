@@ -2,11 +2,48 @@
 # scripts/start_full_demo_tmux.sh
 # 四功能整合 Demo 一鍵啟動：face + vision + speech + Go2
 # 用途：展示用全功能 session
+#
+# Environment overrides (same as start_llm_e2e_tmux.sh):
+#   INPUT_DEVICE        — mic device index (default: 24=USB, 0=HyperX)
+#   CHANNELS            — mic channels (default: 1=USB mono, 2=HyperX stereo)
+#   CAPTURE_SAMPLE_RATE — mic native rate (default: 48000=USB, 44100=HyperX)
+#   LOCAL_PLAYBACK      — true=USB speaker, false=Go2 Megaphone (default: true)
+#   LOCAL_OUTPUT_DEVICE  — ALSA device (default: plughw:3,0)
+#   TTS_PROVIDER        — edge_tts or piper (default: edge_tts)
+#   ROBOT_IP            — Go2 IP (default: 192.168.123.161)
 set -euo pipefail
 
 SESSION="demo"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROS_SETUP="source /opt/ros/humble/setup.zsh && source ~/elder_and_dog/install/setup.zsh"
+WORKDIR="/home/jetson/elder_and_dog"
+CT2_LIB_PATH="$HOME/.local/ctranslate2-cuda/lib"
+ROS_SETUP="source /opt/ros/humble/setup.zsh && source $WORKDIR/install/setup.zsh"
+
+# ── Go2 ──
+ROBOT_IP="${ROBOT_IP:-192.168.123.161}"
+CONN_TYPE="${CONN_TYPE:-webrtc}"
+
+# ── LLM ──
+LLM_ENDPOINT="${LLM_ENDPOINT:-http://localhost:8000/v1/chat/completions}"
+LLM_MODEL="${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+LLM_TIMEOUT="${LLM_TIMEOUT:-5.0}"
+ENABLE_LOCAL_LLM="${ENABLE_LOCAL_LLM:-true}"
+LOCAL_LLM_ENDPOINT="${LOCAL_LLM_ENDPOINT:-http://localhost:11434/v1/chat/completions}"
+LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen2.5:1.5b}"
+
+# ── ASR ──
+INPUT_DEVICE="${INPUT_DEVICE:-24}"
+CHANNELS="${CHANNELS:-1}"
+CAPTURE_SAMPLE_RATE="${CAPTURE_SAMPLE_RATE:-48000}"
+MIC_GAIN="${MIC_GAIN:-4.0}"
+
+# ── TTS ──
+TTS_PROVIDER="${TTS_PROVIDER:-edge_tts}"
+EDGE_TTS_VOICE="${EDGE_TTS_VOICE:-zh-CN-XiaoxiaoNeural}"
+PIPER_MODEL_PATH="/home/jetson/models/piper/zh_CN-huayan-medium.onnx"
+PIPER_CONFIG_PATH="/home/jetson/models/piper/zh_CN-huayan-medium.onnx.json"
+LOCAL_PLAYBACK="${LOCAL_PLAYBACK:-true}"
+LOCAL_OUTPUT_DEVICE="${LOCAL_OUTPUT_DEVICE:-plughw:3,0}"
 
 echo "============================================================"
 echo "  PawAI 四功能 Demo"
@@ -26,19 +63,28 @@ pkill -f llm_bridge_node 2>/dev/null || true
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 sleep 2
 
+# Preflight: LLM endpoint reachability
+LLM_HEALTH_URL="${LLM_ENDPOINT%/chat/completions}/models"
+echo "[preflight] Checking LLM endpoint: $LLM_HEALTH_URL ..."
+if ! curl -sf --max-time 3 "$LLM_HEALTH_URL" >/dev/null 2>&1; then
+  echo "[WARN] LLM endpoint unreachable: $LLM_HEALTH_URL"
+  echo "[HINT] Start SSH tunnel: ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5"
+  echo "[HINT] Ollama fallback will be used if enabled (ENABLE_LOCAL_LLM=$ENABLE_LOCAL_LLM)"
+fi
+
 # === Phase 1: 基礎設施 ===
 
 # --- Window 0: Go2 Driver ---
-echo "[1/8] Starting Go2 Driver..."
+echo "[1/10] Starting Go2 Driver..."
 tmux new-session -d -s "$SESSION" -n go2
 tmux send-keys -t "$SESSION:go2" \
-  "$ROS_SETUP && export ROBOT_IP=192.168.123.161 && export CONN_TYPE=webrtc && \
+  "$ROS_SETUP && export ROBOT_IP=$ROBOT_IP && export CONN_TYPE=$CONN_TYPE && \
   ros2 launch go2_robot_sdk robot.launch.py \
     enable_tts:=false nav2:=false slam:=false rviz2:=false foxglove:=false" Enter
 sleep 10
 
 # --- Window 1: D435 Camera ---
-echo "[2/8] Starting D435 camera..."
+echo "[2/10] Starting D435 camera..."
 tmux new-window -t "$SESSION" -n camera
 tmux send-keys -t "$SESSION:camera" \
   "$ROS_SETUP && ros2 launch realsense2_camera rs_launch.py \
@@ -46,75 +92,91 @@ tmux send-keys -t "$SESSION:camera" \
     rgb_camera.color_profile:=640x480x15 \
     pointcloud.enable:=false \
     align_depth.enable:=true" Enter
-sleep 8
+sleep 5
 
 # === Phase 2: 感知層 ===
 
 # --- Window 2: Face ---
-echo "[3/8] Starting face_identity_node..."
+echo "[3/10] Starting face_identity_node..."
 tmux new-window -t "$SESSION" -n face
 tmux send-keys -t "$SESSION:face" \
   "$ROS_SETUP && ros2 launch face_perception face_perception.launch.py" Enter
 sleep 5
 
 # --- Window 3: Vision (Gesture Recognizer + MediaPipe Pose) ---
-echo "[4/8] Starting vision_perception_node..."
+echo "[4/10] Starting vision_perception_node..."
 tmux new-window -t "$SESSION" -n vision
 tmux send-keys -t "$SESSION:vision" \
   "$ROS_SETUP && ros2 launch vision_perception vision_perception.launch.py \
-    inference_backend:=rtmpose use_camera:=true \
+    use_camera:=true \
     pose_backend:=mediapipe gesture_backend:=recognizer \
     max_hands:=2 publish_fps:=8" Enter
 sleep 5
 
-# --- Window 4: ASR + Intent ---
-echo "[5/8] Starting stt_intent_node..."
+# --- Window 4: Interaction Router (REQUIRED: bridge depends on router output) ---
+echo "[5/10] Starting interaction_router..."
+tmux new-window -t "$SESSION" -n router
+tmux send-keys -t "$SESSION:router" \
+  "$ROS_SETUP && ros2 launch vision_perception interaction_router.launch.py" Enter
+sleep 2
+
+# --- Window 5: ASR + Intent ---
+echo "[6/10] Starting stt_intent_node (Whisper CUDA warmup ~12s)..."
 tmux new-window -t "$SESSION" -n asr
 tmux send-keys -t "$SESSION:asr" \
-  "$ROS_SETUP && ros2 run speech_processor stt_intent_node --ros-args \
+  "$ROS_SETUP && export LD_LIBRARY_PATH=$CT2_LIB_PATH:\${LD_LIBRARY_PATH:-} && \
+  ros2 run speech_processor stt_intent_node --ros-args \
     -p provider_order:='[\"whisper_local\"]' \
-    -p input_device:=0 -p sample_rate:=16000 -p capture_sample_rate:=44100" Enter
-sleep 3
+    -p input_device:=$INPUT_DEVICE -p channels:=$CHANNELS \
+    -p sample_rate:=16000 -p capture_sample_rate:=$CAPTURE_SAMPLE_RATE \
+    -p mic_gain:=$MIC_GAIN" Enter
+sleep 15
 
 # === Phase 3: 決策/執行層 ===
 
-# --- Window 5: TTS ---
-echo "[6/8] Starting tts_node..."
+# --- Window 6: TTS ---
+echo "[7/10] Starting tts_node ($TTS_PROVIDER)..."
 tmux new-window -t "$SESSION" -n tts
-# TODO: 外接喇叭到貨後改 playback_method:=local
 tmux send-keys -t "$SESSION:tts" \
-  "$ROS_SETUP && ros2 run speech_processor tts_node --ros-args -p provider:=piper \
-    -p piper_model_path:=/home/jetson/models/piper/zh_CN-huayan-medium.onnx \
+  "$ROS_SETUP && amixer -c 3 set PCM 147 >/dev/null 2>&1; \
+  ros2 run speech_processor tts_node --ros-args \
+    -p provider:=$TTS_PROVIDER \
+    -p edge_tts_voice:=$EDGE_TTS_VOICE \
+    -p piper_model_path:=$PIPER_MODEL_PATH \
+    -p piper_config_path:=$PIPER_CONFIG_PATH \
+    -p local_playback:=$LOCAL_PLAYBACK \
+    -p local_output_device:=$LOCAL_OUTPUT_DEVICE \
     -p playback_method:=datachannel" Enter
 sleep 3
 
-# --- Window 6: LLM Bridge ---
-echo "[7/8] Starting llm_bridge_node..."
+# --- Window 7: LLM Bridge ---
+echo "[8/10] Starting llm_bridge_node (Cloud + Ollama fallback)..."
 tmux new-window -t "$SESSION" -n llm
 tmux send-keys -t "$SESSION:llm" \
   "$ROS_SETUP && ros2 run speech_processor llm_bridge_node --ros-args \
-    -p llm_endpoint:='http://localhost:8000/v1/chat/completions' \
-    -p llm_model:='Qwen/Qwen2.5-7B-Instruct'" Enter
+    -p llm_endpoint:='$LLM_ENDPOINT' \
+    -p llm_model:='$LLM_MODEL' \
+    -p llm_timeout:=$LLM_TIMEOUT \
+    -p enable_local_llm:=$ENABLE_LOCAL_LLM \
+    -p local_llm_endpoint:='$LOCAL_LLM_ENDPOINT' \
+    -p local_llm_model:='$LOCAL_LLM_MODEL'" Enter
 sleep 3
 
-# --- Window 7: Event Action Bridge ---
-echo "[8/8] Starting event_action_bridge..."
+# --- Window 8: Event Action Bridge (subscribes to interaction_router output) ---
+echo "[9/10] Starting event_action_bridge..."
 tmux new-window -t "$SESSION" -n bridge
 tmux send-keys -t "$SESSION:bridge" \
   "$ROS_SETUP && ros2 launch vision_perception event_action_bridge.launch.py" Enter
 sleep 2
 
-# === Optional: interaction_router + foxglove ===
-
-# Interaction router (高層事件觀測)
-tmux new-window -t "$SESSION" -n router
-tmux send-keys -t "$SESSION:router" \
-  "$ROS_SETUP && ros2 launch vision_perception interaction_router.launch.py" Enter
-
-# Foxglove bridge
+# --- Window 9: Foxglove Bridge ---
+echo "[10/10] Starting Foxglove bridge..."
 tmux new-window -t "$SESSION" -n fox
 tmux send-keys -t "$SESSION:fox" \
   "$ROS_SETUP && ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765" Enter
+
+# === Options ===
+tmux set-option -t "$SESSION" remain-on-exit on >/dev/null
 
 echo ""
 echo "=== All started ==="
@@ -122,19 +184,21 @@ echo ""
 echo "Windows:"
 echo "  go2     — Go2 Driver (WebRTC)"
 echo "  camera  — D435 Camera"
-echo "  face    — Face Identity"
-echo "  vision  — Gesture + Pose (Recognizer + MediaPipe)"
-echo "  asr     — ASR + Intent"
-echo "  tts     — TTS (Piper)"
-echo "  llm     — LLM Bridge"
-echo "  bridge  — Event → Action Bridge"
-echo "  router  — Interaction Router (觀測)"
+echo "  face    — Face Identity (YuNet 2023mar + SFace)"
+echo "  vision  — Gesture + Pose (Recognizer + MediaPipe CPU)"
+echo "  router  — Interaction Router (welcome/gesture_cmd/fall_alert)"
+echo "  asr     — ASR + Intent (Whisper small CUDA)"
+echo "  tts     — TTS ($TTS_PROVIDER + ${LOCAL_PLAYBACK:+USB speaker}${LOCAL_PLAYBACK:-Megaphone})"
+echo "  llm     — LLM Bridge (Cloud→Ollama→RuleBrain)"
+echo "  bridge  — Event → Action Bridge (subscribes to router)"
 echo "  fox     — Foxglove (ws://$(hostname -I | awk '{print $1}'):8765)"
 echo ""
 echo "To attach: tmux attach -t $SESSION"
 echo "To kill:   tmux kill-session -t $SESSION"
 echo ""
-echo "⚠️  確認事項："
-echo "  1. SSH tunnel 到 RTX 8000: ssh -f -N -L 8000:localhost:8000 roy422@140.136.155.5"
-echo "  2. Go2 Ethernet 已連接 (192.168.123.161)"
-echo "  3. 外接 mic/speaker（到貨後改 tts playback_method）"
+echo "Verify: bash scripts/e2e_health_check.sh"
+echo ""
+echo "Config:"
+echo "  Mic: device=$INPUT_DEVICE channels=$CHANNELS rate=$CAPTURE_SAMPLE_RATE gain=$MIC_GAIN"
+echo "  TTS: $TTS_PROVIDER local_playback=$LOCAL_PLAYBACK device=$LOCAL_OUTPUT_DEVICE"
+echo "  LLM: $LLM_MODEL (local fallback=$ENABLE_LOCAL_LLM: $LOCAL_LLM_MODEL)"

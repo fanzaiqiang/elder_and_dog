@@ -9,9 +9,5 @@ def generate_launch_description():
             executable="event_action_bridge",
             name="event_action_bridge",
             output="screen",
-            parameters=[{
-                "gesture_cooldown": 3.0,
-                "fallen_cooldown": 10.0,
-            }],
         ),
     ])

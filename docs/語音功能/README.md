@@ -596,3 +596,74 @@ bash scripts/run_speech_test.sh --yaml=test_scripts/custom.yaml
 - [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR)
 - [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)
 - [F5-TTS](https://github.com/SWivid/F5-TTS)
+
+---
+
+## Clean Architecture 重構藍圖（展示後）
+
+> 參考：`docs/research/2026-03-25-go2-sdk-capability-and-architecture.md` §5.4 Phase 4
+
+**現狀**：`stt_intent_node.py` 1016 行（6 class）+ `tts_node.py` 1008 行（10 class）= 兩個 god files。
+**預估工時**：4-5 天（含測試遷移）
+**風險**：最高——語音是 Demo 主線核心，重構期間 30 輪驗收需重跑。
+
+### stt_intent_node 目標結構
+
+```
+speech_processor/
+├── domain/
+│   ├── asr_result.py           # ASRResult dataclass
+│   ├── i_asr_provider.py       # IASRProvider (ABC)
+│   └── intent_classifier.py    # IntentClassifier（已抽取）
+├── application/
+│   └── stt_service.py          # 錄音→ASR→Intent 流程
+├── infrastructure/
+│   ├── whisper_adapter.py      # faster-whisper CUDA 封裝
+│   ├── qwen_asr_adapter.py     # Qwen Cloud ASR 封裝
+│   └── audio_recorder.py       # sounddevice 錄音+VAD
+└── presentation/
+    └── stt_intent_node.py      # ROS2 Node（僅接線，~100行）
+```
+
+### tts_node 目標結構
+
+```
+speech_processor/
+├── domain/
+│   ├── tts_request.py          # TTSRequest, AudioFormat dataclass
+│   └── i_tts_provider.py       # ITTSProvider (ABC)
+├── application/
+│   ├── tts_service.py          # 合成→快取→播放流程
+│   └── audio_cache.py          # AudioCache（已有，搬入）
+├── infrastructure/
+│   ├── piper_adapter.py        # Piper TTS
+│   ├── edge_tts_adapter.py     # edge-tts
+│   ├── elevenlabs_adapter.py   # ElevenLabs
+│   ├── megaphone_player.py     # Go2 Megaphone DataChannel 播放
+│   └── local_player.py         # USB 喇叭 aplay 播放
+└── presentation/
+    └── tts_node.py             # ROS2 Node（僅接線，~80行）
+```
+
+### llm_bridge_node 目標結構
+
+```
+speech_processor/
+├── domain/
+│   └── llm_contract.py         # LLM 回應解析（已抽取）
+├── application/
+│   └── llm_bridge_service.py   # Cloud→Ollama→RuleBrain fallback 流程
+├── infrastructure/
+│   ├── cloud_llm_client.py     # vLLM HTTP client
+│   ├── ollama_client.py        # Ollama HTTP client
+│   └── rule_brain.py           # RuleBrain 模板回覆
+└── presentation/
+    └── llm_bridge_node.py      # ROS2 Node（僅接線，~80行）
+```
+
+### 遷移步驟
+
+1. 先拆 tts_node（provider 最多但每個都是獨立 class，最好拆）
+2. 再拆 stt_intent_node（ASR provider + 錄音邏輯 + VAD）
+3. llm_bridge_node 已有 llm_contract 抽取，剩 service 和 client 分離
+4. 每步跑 CI + 30 輪驗收確認無 regression

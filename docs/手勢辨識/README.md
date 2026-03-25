@@ -689,3 +689,45 @@ ssh jetson-nano "free -h"
 ### RTMPose 效能基準
 - [RTMPose 論文 (arxiv)](https://arxiv.org/html/2303.07399v2)
 - [Dwpose-Tensorrt (TensorRT 轉換)](https://github.com/yuvraj108c/Dwpose-Tensorrt)
+
+---
+
+## Clean Architecture 重構藍圖（4/13 後）
+
+> 參考：`docs/research/2026-03-25-go2-sdk-capability-and-architecture.md` §5.4 Phase 4a
+
+**現狀**：vision_perception_node.py 442 行（含 _tick() 183 行 monster method），已有 interaction_rules + event_builder + gesture_classifier 抽取。
+**預估工時**：2-3 天（含測試遷移，與姿勢辨識共同重構）
+
+### 目標結構（手勢部分）
+
+```
+vision_perception/
+├── domain/
+│   ├── gesture.py              # Gesture enum, GestureResult dataclass
+│   ├── gesture_classifier.py   # classify_gesture（已有）
+│   ├── event_builder.py        # build_gesture_event（已有）
+│   └── i_gesture_backend.py    # IGestureBackend (ABC)
+├── application/
+│   └── gesture_service.py      # 推理→分類→投票→事件建構
+├── infrastructure/
+│   ├── mediapipe_gesture.py    # MediaPipe Gesture Recognizer 封裝
+│   ├── mediapipe_hands.py      # MediaPipe Hands 封裝（備援）
+│   └── rtmpose_gesture.py      # RTMPose 手部 keypoint（備援）
+└── presentation/
+    └── (共用 vision_perception_node.py)
+```
+
+### 已完成的抽取（Phase 1）
+
+- `gesture_classifier.py` — 純函式，6 unit tests
+- `event_builder.py` — 純函式，9 unit tests（含 GESTURE_COMPAT_MAP）
+- `interaction_rules.py` — should_gesture_command，15 unit tests
+- `gesture_recognizer_backend.py` — Gesture Recognizer 封裝
+
+### 剩餘工作
+
+1. 定義 `domain/i_gesture_backend.py`（ABC）
+2. 將 gesture_recognizer_backend 改為實作 IGestureBackend
+3. 拆 `_tick()` 中的 gesture 部分到 `application/gesture_service.py`
+4. node 只保留 ROS2 接線

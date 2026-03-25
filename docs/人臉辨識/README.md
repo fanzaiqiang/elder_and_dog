@@ -296,3 +296,43 @@ face_perception/
 ```
 
 參數完整對照表見 [implementation plan](../superpowers/plans/2026-03-17-face-perception-package.md)。
+
+---
+
+## Clean Architecture 重構藍圖（4/13 後）
+
+> 參考：`docs/research/2026-03-25-go2-sdk-capability-and-architecture.md` §5.4 Phase 3
+
+**現狀**：`face_identity_node.py` 680 行，單一 class 包含偵測+識別+追蹤+狀態機+事件發布。
+**預估工時**：2-3 天（含測試遷移）
+
+### 目標結構
+
+```
+face_perception/
+├── domain/
+│   ├── face_entity.py          # FaceTrack, FaceDB dataclass
+│   ├── i_face_detector.py      # IFaceDetector (ABC)
+│   ├── i_face_recognizer.py    # IFaceRecognizer (ABC)
+│   └── i_tracker.py            # ITracker (ABC)
+├── application/
+│   └── face_identity_service.py  # 偵測→識別→追蹤→穩定化流程
+├── infrastructure/
+│   ├── yunet_adapter.py        # YuNet 2023mar 偵測器
+│   ├── sface_adapter.py        # SFace 識別器
+│   ├── iou_tracker.py          # IOU 追蹤
+│   └── d435_camera.py          # D435 影像來源
+└── presentation/
+    └── face_identity_node.py   # ROS2 Node（僅接線+參數，~80行）
+```
+
+### 遷移步驟（漸進式）
+
+1. 抽取 `domain/face_entity.py`（FaceTrack dataclass + cosine_similarity）
+2. 定義 `domain/i_face_detector.py`（IFaceDetector ABC）
+3. 包裝 `infrastructure/yunet_adapter.py`（實作 IFaceDetector）
+4. 定義 `domain/i_face_recognizer.py` + `infrastructure/sface_adapter.py`
+5. 抽取 `infrastructure/iou_tracker.py`（IOU 追蹤邏輯）
+6. 建立 `application/face_identity_service.py`（協調流程）
+7. 瘦身 `presentation/face_identity_node.py`（僅 ROS2 接線）
+8. 每步跑 CI 確認無 regression

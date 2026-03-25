@@ -621,3 +621,45 @@ Phase 2 首日：DWPose ONNX → TRT 轉換
 ### MediaPipe（僅限 x86 開發機 demo）
 - [MediaPipe Pose](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/pose.md)
 - [MediaPipe Jetson 安裝問題](https://forums.developer.nvidia.com/t/does-jetson-orin-nano-support-mediapipe/290797)
+
+---
+
+## Clean Architecture 重構藍圖（4/13 後）
+
+> 參考：`docs/research/2026-03-25-go2-sdk-capability-and-architecture.md` §5.4 Phase 4a
+
+**現狀**：與手勢辨識共用 vision_perception_node.py，pose 部分在 _tick() 內。已有 pose_classifier + mediapipe_pose 抽取。
+**預估工時**：2-3 天（與手勢辨識共同重構）
+
+### 目標結構（姿勢部分）
+
+```
+vision_perception/
+├── domain/
+│   ├── pose.py                 # Pose enum, PoseResult dataclass
+│   ├── pose_classifier.py      # classify_pose（已有）
+│   ├── event_builder.py        # build_pose_event（已有）
+│   └── i_pose_backend.py       # IPoseBackend (ABC)
+├── application/
+│   └── pose_service.py         # 推理→分類→事件建構
+├── infrastructure/
+│   ├── mediapipe_pose.py       # MediaPipe Pose 封裝（已有）
+│   └── rtmpose_pose.py         # RTMPose 封裝（備援）
+└── presentation/
+    └── (共用 vision_perception_node.py)
+```
+
+### 已完成的抽取（Phase 1）
+
+- `pose_classifier.py` — 純函式，11 unit tests（含 bending）
+- `event_builder.py` — build_pose_event，4 unit tests
+- `mediapipe_pose.py` — MediaPipe Pose 封裝
+- `mediapipe_pose_mapping.py` — MP→COCO keypoint 映射，6 unit tests
+
+### 剩餘工作
+
+1. 定義 `domain/i_pose_backend.py`（ABC）
+2. 將 mediapipe_pose 改為實作 IPoseBackend
+3. 拆 `_tick()` 中的 pose 部分到 `application/pose_service.py`
+4. node 只保留 ROS2 接線
+5. interaction_router + event_action_bridge 已獨立，不受影響

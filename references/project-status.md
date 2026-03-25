@@ -1,6 +1,6 @@
 # 專案狀態
 
-**最後更新**：2026-03-25（深度審計 + blocker 修復 + repo 瘦身 + CI 強化 + 研究文件）
+**最後更新**：2026-03-25（深度審計 + blocker 修復 + repo 瘦身 + CI 強化 + 研究文件 + Jetson 四模組整合測試）
 **硬底線**：2026/4/13 文件繳交，五月展示
 
 ---
@@ -9,10 +9,10 @@
 
 | 模組 | 狀態 | 最後驗證 | 備註 |
 |------|------|----------|------|
-| 語音 (speech_processor) | **Demo ready** | 3/24 | edge-tts + fast path + Cloud→Ollama→RuleBrain，silent exceptions 已補 log |
-| 人臉 (face_perception) | Jetson smoke 通過 | 3/18 | QoS 已修，YuNet default 改 2023mar，待上機驗證 |
-| 手勢 (vision_perception) | Phase 4 完成 | 3/23 | Gesture Recognizer 主線，23 + 15 tests（含 bridge 行為測試） |
-| 姿勢 (vision_perception) | Phase 4 完成 | 3/23 | MediaPipe Pose CPU 18.5 FPS，L3 壓測通過 |
+| 語音 (speech_processor) | **Demo ready** | 3/25 | edge-tts + fast path + Cloud→Ollama→RuleBrain，Whisper CUDA float16 OK，USB mic 收音弱需調 gain |
+| 人臉 (face_perception) | **整合測試通過** | 3/25 | YuNet 2023mar + SFace，偵測+識別+WELCOME 觸發+LLM 問候 全通 |
+| 手勢 (vision_perception) | **整合測試通過** | 3/25 | Gesture Recognizer：stop/thumbs_up 正確觸發 Go2 動作 |
+| 姿勢 (vision_perception) | **整合測試通過** | 3/25 | MediaPipe Pose CPU，四模組同跑正常 |
 | LLM (llm_bridge_node) | 本地+雲端+fast path | 3/24 | Cloud 7B → Ollama 1.5B → RuleBrain 三級 fallback |
 | Studio (pawai-studio) | 前端開發中 | 3/16 | Next.js，前端截止 3/26，WebSocket bridge 不存在 |
 | CI | **16 test files, 214+ cases** | 3/25 | fast-gate + **blocking contract check** + git pre-commit hook |
@@ -21,6 +21,15 @@
 | 導航避障 | **研究完成** | 3/25 | D435 ROI depth 主線，LiDAR No-Go，~10-12hr 實作 |
 
 ## 最近完成（3/25）
+
+### Jetson 四模組整合測試（3/25 晚）
+- **四模組同跑**：face + speech + gesture + pose，不 OOM、不互卡 ✅
+- **人臉→LLM 問候**：偵測 roy → WELCOME → TTS「roy 你好」✅
+- **手勢→Go2 動作**：stop/thumbs_up 正確觸發 ✅
+- **語音 TTS**：edge-tts + USB 喇叭播放正常 ✅
+- **語音 ASR**：Whisper CUDA float16 warmup 5.9s OK，但 USB mic 收音弱，需靠近或加 gain ⚠️
+- **已修問題**：Whisper compute_type int8→float16、LD_LIBRARY_PATH 帶入 ROS_SETUP、silent exception 加 log
+- **已知問題**：USB device index 重開機後會飄（mic 24→0, speaker hw:3,0→hw:1,0）、debug_image 需 resize 降頻寬
 
 ### 深度審計
 - 7 軸並行掃描 + 4 類 web research = 99 findings

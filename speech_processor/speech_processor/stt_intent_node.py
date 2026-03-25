@@ -163,8 +163,9 @@ class WhisperLocalProvider(ASRProvider):
                 cpu_threads=self.cpu_threads,
             )
             return
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("faster-whisper load failed: %s", e)
 
         try:
             import whisper

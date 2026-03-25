@@ -17,7 +17,7 @@ SESSION="demo"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKDIR="/home/jetson/elder_and_dog"
 CT2_LIB_PATH="$HOME/.local/ctranslate2-cuda/lib"
-ROS_SETUP="source /opt/ros/humble/setup.zsh && source $WORKDIR/install/setup.zsh"
+ROS_SETUP="source /opt/ros/humble/setup.zsh && source $WORKDIR/install/setup.zsh && export LD_LIBRARY_PATH=$CT2_LIB_PATH:\${LD_LIBRARY_PATH:-}"
 
 # ── Go2 ──
 ROBOT_IP="${ROBOT_IP:-192.168.123.161}"
@@ -124,9 +124,10 @@ sleep 2
 echo "[6/10] Starting stt_intent_node (Whisper CUDA warmup ~12s)..."
 tmux new-window -t "$SESSION" -n asr
 tmux send-keys -t "$SESSION:asr" \
-  "$ROS_SETUP && export LD_LIBRARY_PATH=$CT2_LIB_PATH:\${LD_LIBRARY_PATH:-} && \
+  "$ROS_SETUP && \
   ros2 run speech_processor stt_intent_node --ros-args \
     -p provider_order:='[\"whisper_local\"]' \
+    -p whisper_local.device:=cuda -p whisper_local.compute_type:=float16 \
     -p input_device:=$INPUT_DEVICE -p channels:=$CHANNELS \
     -p sample_rate:=16000 -p capture_sample_rate:=$CAPTURE_SAMPLE_RATE \
     -p mic_gain:=$MIC_GAIN" Enter
